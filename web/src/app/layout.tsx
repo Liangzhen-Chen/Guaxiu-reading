@@ -1,4 +1,4 @@
-import type { Metadata } from "react";
+import type { Metadata } from "next";
 import "./globals.css";
 import { Nav } from "./nav";
 import { LangProvider } from "./lang";
