@@ -9,5 +9,9 @@
     </view>
     <view wx:if="{{books.length===0}}" class="empty">书架上还没有书</view>
   </view>
-  <button class="btn" bindtap="login">微信登录</button>
+  <view class="actions">
+    <button class="btn" bindtap="upload">📄 导入文件</button>
+    <button class="btn" bindtap="uploadFromChat">💬 从聊天选择</button>
+  </view>
+  <button class="btn-login" bindtap="login" wx:if="{{!loggedIn}}">微信登录</button>
 </view>
