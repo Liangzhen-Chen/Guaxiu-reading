@@ -29,7 +29,17 @@ export default function LoginPage() {
       <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-8 placeholder:text-[#86868b]" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
       <button onClick={submit} className="w-full rounded-full bg-[#1d1d1f] text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3">{t("login", lang)}</button>
       <div className="text-center text-sm text-[#86868b]">{t("noAccount", lang)}<a href="/register" className="text-[#1d1d1f] underline">{t("register", lang)}</a></div>
-      <p className="text-center text-xs text-[#86868b] mt-8">{t("wechatLogin", lang)}</p>
+
+      <div className="relative my-8">
+        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#d2d2d7]"></div></div>
+        <div className="relative flex justify-center"><span className="px-3 text-xs text-[#86868b] bg-white">{lang === "zh" ? "微信用户" : "WeChat Users"}</span></div>
+      </div>
+
+      <div className="text-center bg-[#f5f5f7] rounded-xl p-4">
+        <p className="text-sm text-[#1d1d1f] mb-1">{lang === "zh" ? "微信小程序登录" : "Login via Mini Program"}</p>
+        <p className="text-xs text-[#86868b]">{lang === "zh" ? "搜索「朽瓜」小程序，扫码即可登录" : "Search \"Xiugua\" in WeChat Mini Programs"}</p>
+        <p className="text-xs text-[#86868b] mt-1">{lang === "zh" ? "登录后在网页端可绑定邮箱" : "Bind email after login to access on web"}</p>
+      </div>
     </div>
   );
 }
