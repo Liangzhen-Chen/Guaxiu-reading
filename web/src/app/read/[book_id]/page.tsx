@@ -84,7 +84,7 @@ export default function ReadPage() {
       if (full.includes("第") && full.includes("章完成")) loadState();
       setStreaming(false);
       roundCount.current += 1;
-      if (roundCount.current > 2 && Math.random() < 0.15) setShowSatisfaction(true);
+      if (roundCount.current > 3 && Math.random() < 0.05) setShowSatisfaction(true);
     }
   }
 
