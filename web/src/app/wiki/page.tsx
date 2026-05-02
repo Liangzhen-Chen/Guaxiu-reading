@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { track } from "../track";
 
-const API = "http://localhost:8000";
+const API = "http://122.51.236.219:8000";
 function getToken() { if (typeof window === "undefined") return ""; return localStorage.getItem("token") || ""; }
 
 interface Entry {

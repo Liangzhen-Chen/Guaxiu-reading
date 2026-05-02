@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-const API = "http://localhost:8000";
+const API = "http://122.51.236.219:8000";
 
 export default function LoginPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState("");

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 
-const API = "http://localhost:8000";
+const API = "http://122.51.236.219:8000";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [pwd2, setPwd2] = useState("");

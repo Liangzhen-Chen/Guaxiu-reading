@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useLang } from "./lang";
 
-const API = "http://localhost:8000";
+const API = "http://122.51.236.219:8000";
 
 function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => void; lang: string }) {
   const [msg, setMsg] = useState("");

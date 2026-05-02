@@ -1,4 +1,4 @@
-const API = "http://localhost:8000";
+const API = "http://122.51.236.219:8000";
 export function track(event: string, props?: Record<string, any>, durationMs?: number) {
   const page = typeof window !== "undefined" ? window.location.pathname : "";
   fetch(API + "/api/analytics/event", {
