@@ -12,6 +12,9 @@ venv/
 *.db
 *.sqlite3
 
+# Prompt 私有文本（核心 IP）
+prompts_private.py
+
 # 用户上传文件
 data/books/
 

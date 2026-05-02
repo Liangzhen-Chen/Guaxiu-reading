@@ -16,6 +16,7 @@ class ReadingProgress(Base):
         nullable=False, unique=True, index=True
     )
     mode: Mapped[str] = mapped_column(String(20), default="quick")  # quick / balanced / deep
+    language: Mapped[str] = mapped_column(String(10), default="zh")  # zh / en
     current_chapter: Mapped[int] = mapped_column(Integer, default=0)
     total_rounds: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(

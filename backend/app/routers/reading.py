@@ -1,9 +1,10 @@
 """导读路由 —— 核心：苏格拉底式流式对话"""
 import json
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
@@ -25,7 +26,7 @@ from app.services.llm_service import chat, count_tokens
 
 router = APIRouter(prefix="/api/reading", tags=["reading"])
 
-ASSESSMENT_CHAPTER = -1  # 评估对话用 chapter_index = -1 标记
+ASSESSMENT_CHAPTER = -1
 
 
 @router.post("/mode", response_model=ProgressResponse)
@@ -39,22 +40,15 @@ async def select_mode(
     progress = book.progress
     if progress is None:
         progress = ReadingProgress(
-            book_id=book.id, mode=data.mode, status="assessment"
+            book_id=book.id, mode=data.mode, status="assessment",
+            language=data.language,
         )
         db.add(progress)
     else:
         progress.mode = data.mode
     await db.commit()
     await db.refresh(progress)
-    return ProgressResponse(
-        book_id=book.id, book_title=book.title, mode=progress.mode,
-        current_chapter=progress.current_chapter,
-        total_chapters=book.chapter_count,
-        total_rounds=progress.total_rounds, status=progress.status,
-        progress_percent=int(
-            progress.current_chapter / max(book.chapter_count or 1, 1) * 100
-        ),
-    )
+    return _to_progress_response(book, progress)
 
 
 @router.post("/assessment")
@@ -63,27 +57,17 @@ async def assessment(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """
-    背景评估对话 (Prompt D)
-    用户每发送一条消息，返回 AI 下一轮评估问题。
-    3-5 轮后自动输出用户画像 JSON 并进入 reading 状态。
-    """
+    """背景评估对话 (Prompt D)，3-5 轮后自动输出用户画像并进入 reading 状态"""
     book = await _get_book(db, data.book_id, user.id)
-    mode = book.progress.mode if book.progress else "quick"
 
-    # 获取评估对话历史
     prev = await db.execute(
         select(Conversation).where(
             Conversation.book_id == book.id,
             Conversation.chapter_index == ASSESSMENT_CHAPTER,
         ).order_by(Conversation.round_index)
     )
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in prev.scalars().all()
-    ]
+    history = [{"role": m.role, "content": m.content} for m in prev.scalars().all()]
 
-    # 保存用户消息
     round_idx = len([m for m in history if m["role"] == "user"])
     db.add(Conversation(
         book_id=book.id, chapter_index=ASSESSMENT_CHAPTER,
@@ -91,21 +75,17 @@ async def assessment(
     ))
     history.append({"role": "user", "content": data.message})
 
-    # 调用 Prompt D 生成回应
     ai_response = await generate_assessment_question(
-        book_title=book.title,
-        author=book.author or "未知",
-        category=book.category or "通用",
-        conversation_history=history,
+        book_title=book.title, author=book.author or "未知",
+        category=book.category or "通用", conversation_history=history,
+        language=book.progress.language if book.progress else "zh",
     )
 
-    # 保存 AI 回应
     db.add(Conversation(
         book_id=book.id, chapter_index=ASSESSMENT_CHAPTER,
         round_index=round_idx + 1, role="assistant", content=ai_response
     ))
 
-    # 判断是否完成评估
     assessment_complete = False
     try:
         result = json.loads(ai_response)
@@ -115,16 +95,16 @@ async def assessment(
             if progress:
                 progress.status = "reading"
                 progress.assessment_result = json.dumps(
-                    result.get("profile", {}), ensure_ascii=False
+                    {"profile": result.get("profile", {}), "chapter_frameworks": {}},
+                    ensure_ascii=False,
                 )
     except (json.JSONDecodeError, TypeError):
-        # 还在评估中，继续
-        assessment_complete = round_idx >= 2  # 至少 3 轮
+        assessment_complete = round_idx >= 2
 
-    if assessment_complete:
-        progress = book.progress
-        if progress and progress.status != "reading":
-            progress.status = "reading"
+    if assessment_complete and book.progress and book.progress.status != "reading":
+        book.progress.status = "reading"
+        if book.progress.current_chapter == 0:
+            book.progress.current_chapter = 1
 
     await db.commit()
 
@@ -141,67 +121,61 @@ async def reading_chat(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """
-    导读对话 (Prompt A + B)
-    每轮：检查是否需要生成本章框架 → 流式返回苏格拉底追问
-    """
+    """导读对话 (Prompt A + B)。章节框架自动缓存，断点自动续接。"""
     book = await _get_book(db, data.book_id, user.id)
     progress = book.progress
-    if not progress or progress.status not in ("reading", "assessment"):
+    if not progress or progress.status not in ("reading", "paused"):
         raise HTTPException(status_code=400, detail="请先选择阅读模式")
 
-    mode = progress.mode
-    chapter = progress.current_chapter or 1
+    # 断点续接：paused 状态下恢复
+    if progress.status == "paused":
+        progress.status = "reading"
+        await db.commit()
 
-    # 读取全书文本
+    mode = progress.mode
+    chapter = max(progress.current_chapter, 1)
+
+    # 读全书文本
     book_text = ""
     if book.text_path:
         try:
             with open(book.text_path, "r", encoding="utf-8") as f:
                 book_text = f.read()
         except FileNotFoundError:
-            raise HTTPException(status_code=400, detail="书籍文本未找到，请重新上传")
+            raise HTTPException(status_code=400, detail="书籍文本未找到")
 
-    # 获取或生成章节框架 (Prompt A)
-    # 框架缓存在 progress.assessment_result 中，格式: {"chapter_frameworks": {"1": {...}}}
-    frameworks = {}
+    # 获取或生成章节框架（缓存在 progress.assessment_result 中）
+    stored = {}
     if progress.assessment_result:
         try:
             stored = json.loads(progress.assessment_result)
-            frameworks = stored.get("chapter_frameworks", {})
         except json.JSONDecodeError:
             pass
+    frameworks = stored.get("chapter_frameworks", {})
 
     chapter_key = str(chapter)
     if chapter_key not in frameworks:
-        # 调用 Prompt A 生成框架
         chapter_text = _extract_chapter_text(book_text, chapter, book.chapter_count or 1)
         framework = await generate_chapter_structure(
-            book_title=book.title,
-            chapter_index=chapter,
-            chapter_text=chapter_text,
-            mode=mode,
+            book_title=book.title, chapter_index=chapter,
+            chapter_text=chapter_text, mode=mode,
+            language=progress.language,
         )
         frameworks[chapter_key] = framework
-        # 保存回 progress
-        progress.assessment_result = json.dumps(
-            {"chapter_frameworks": frameworks}, ensure_ascii=False
-        )
+        stored["chapter_frameworks"] = frameworks
+        progress.assessment_result = json.dumps(stored, ensure_ascii=False)
         await db.commit()
 
     framework = frameworks[chapter_key]
 
-    # 获取导读对话历史
+    # 获取本章对话历史（断点续接的关键）
     prev = await db.execute(
         select(Conversation).where(
             Conversation.book_id == book.id,
             Conversation.chapter_index == chapter,
         ).order_by(Conversation.round_index)
     )
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in prev.scalars().all()
-    ]
+    history = [{"role": m.role, "content": m.content} for m in prev.scalars().all()]
 
     # 保存用户消息
     round_idx = len([m for m in history if m["role"] == "user"])
@@ -210,23 +184,20 @@ async def reading_chat(
         round_index=round_idx, role="user", content=data.message,
     ))
     await db.commit()
-
     history.append({"role": "user", "content": data.message})
 
-    # 流式返回
+    # 流式对话
     async def generate():
         full_response = ""
         async for token in socratic_chat_stream(
-            mode=mode,
-            chapter_framework=framework,
-            book_text=book_text,
-            conversation_history=history,
-            user_message=data.message,
+            mode=mode, chapter_framework=framework, book_text=book_text,
+            conversation_history=history, user_message=data.message,
+            language=progress.language,
         ):
             full_response += token
             yield token
 
-        # 保存 AI 完整回应
+        # 保存 AI 回应 + 处理章节切换
         db2 = async_session()
         try:
             db2.add(Conversation(
@@ -235,40 +206,56 @@ async def reading_chat(
                 content=full_response,
                 metadata_={"chapter": chapter, "mode": mode},
             ))
-            # 更新进度
             progress2 = (await db2.execute(
                 select(ReadingProgress).where(ReadingProgress.book_id == book.id)
             )).scalar_one_or_none()
+
             if progress2:
                 progress2.total_rounds = round_idx + 2
-            await db2.commit()
 
-            # 检查是否本章结束 → 调用 Prompt C 提取概念
-            if _is_chapter_end(full_response):
-                concepts_data = await extract_concepts(chapter, history + [
-                    {"role": "assistant", "content": full_response}
-                ])
-                for c in concepts_data.get("concepts", []):
-                    entry = WikiEntry(
-                        user_id=user.id, book_id=book.id,
-                        concept_name=c["name"],
-                        chapter_index=chapter,
-                        ai_definition=c.get("definition", ""),
-                        source_quote=c.get("source_quote"),
-                        tags=c.get("tags", []),
-                    )
-                    db2.add(entry)
-                for v in concepts_data.get("viewpoints", []):
-                    entry = WikiEntry(
-                        user_id=user.id, book_id=book.id,
-                        concept_name=v["statement"][:300],
-                        chapter_index=chapter,
-                        ai_definition=v.get("statement", ""),
-                        source_quote=None,
-                        tags=v.get("tags", []),
-                    )
-                    db2.add(entry)
-                await db2.commit()
+                # ── 章节切换（AI 自动或用户 /next 触发）──
+                if _is_chapter_end(full_response) or data.message.strip() == "/next":
+                    try:
+                        concepts_data = await extract_concepts(
+                            chapter,
+                            history + [{"role": "assistant", "content": full_response}],
+                            language=progress.language,
+                        )
+                        count = 0
+                        for c in concepts_data.get("concepts", []):
+                            db2.add(WikiEntry(
+                                user_id=user.id, book_id=book.id,
+                                concept_name=c["name"], entry_type="concept",
+                                chapter_index=chapter,
+                                ai_definition=c.get("definition", ""),
+                                evidence=c.get("evidence", []),
+                                source_quote=c.get("source_quote"),
+                                tags=c.get("tags", []),
+                            ))
+                            count += 1
+                        for v in concepts_data.get("viewpoints", []):
+                            db2.add(WikiEntry(
+                                user_id=user.id, book_id=book.id,
+                                concept_name=v["statement"][:300], entry_type="viewpoint",
+                                chapter_index=chapter,
+                                ai_definition=v.get("statement", ""),
+                                evidence=v.get("evidence", []),
+                                tags=v.get("tags", []),
+                            ))
+                            count += 1
+
+                        total = book.chapter_count or 1
+                        if chapter >= total:
+                            progress2.status = "completed"
+                            yield f"\n\n[全书导读完成！{count} 条概念/观点已存入 Wiki。]"
+                        else:
+                            progress2.current_chapter = chapter + 1
+                            progress2.status = "paused"
+                            yield f"\n\n[第{chapter}章完成。{count} 条概念/观点已提取。输入任意内容进入第{chapter + 1}章。]"
+                    except Exception as e:
+                        yield f"\n\n[概念提取出错: {e}]"
+
+            await db2.commit()
         finally:
             await db2.close()
 
@@ -278,11 +265,77 @@ async def reading_chat(
 @router.get("/progress/{book_id}", response_model=ProgressResponse)
 async def get_progress(
     book_id: uuid.UUID,
+    include_history: bool = Query(default=False, description="是否返回最近对话"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """获取阅读进度。include_history=true 时返回上轮对话（用于断点续接前端展示）"""
     book = await _get_book(db, book_id, user.id)
     progress = book.progress
+    resp = _to_progress_response(book, progress)
+
+    if include_history and progress and progress.status not in ("not_started",):
+        chapter = max(progress.current_chapter, 1)
+        prev = await db.execute(
+            select(Conversation).where(
+                Conversation.book_id == book.id,
+                Conversation.chapter_index.in_([chapter, ASSESSMENT_CHAPTER]),
+            ).order_by(Conversation.round_index)
+        )
+        # 动态属性：用 FastAPI response_model 不校验额外字段，这里手动加
+        resp.last_messages = [
+            {"role": m.role, "content": m.content, "round": m.round_index}
+            for m in prev.scalars().all()[-6:]  # 最近 6 条
+        ]
+
+    return resp
+
+
+@router.get("/resume/{book_id}", response_model=ProgressResponse)
+async def resume_reading(
+    book_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """断点续接：返回当前进度 + 最近对话，前端直接用此数据恢复导读界面"""
+    book = await _get_book(db, book_id, user.id)
+    progress = book.progress
+    if not progress:
+        raise HTTPException(status_code=400, detail="尚未开始导读")
+
+    resp = _to_progress_response(book, progress)
+
+    chapter = max(progress.current_chapter, 1)
+    # 加载最近对话
+    prev = await db.execute(
+        select(Conversation).where(
+            Conversation.book_id == book.id,
+            Conversation.chapter_index.in_([chapter, ASSESSMENT_CHAPTER]),
+        ).order_by(Conversation.round_index)
+    )
+    resp.last_messages = [
+        {"role": m.role, "content": m.content, "round": m.round_index}
+        for m in prev.scalars().all()
+    ]
+
+    return resp
+
+
+# ── helpers ──
+
+async def _get_book(db: AsyncSession, book_id: uuid.UUID, user_id: uuid.UUID) -> Book:
+    result = await db.execute(
+        select(Book)
+        .where(Book.id == book_id, Book.user_id == user_id)
+        .options(selectinload(Book.progress))
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    return book
+
+
+def _to_progress_response(book: Book, progress: ReadingProgress | None) -> ProgressResponse:
     return ProgressResponse(
         book_id=book.id, book_title=book.title,
         mode=progress.mode if progress else "quick",
@@ -297,23 +350,7 @@ async def get_progress(
     )
 
 
-# ── helpers ──
-
-async def _get_book(db: AsyncSession, book_id: uuid.UUID, user_id: uuid.UUID) -> Book:
-    result = await db.execute(
-        select(Book).where(Book.id == book_id, Book.user_id == user_id)
-    )
-    book = result.scalar_one_or_none()
-    if not book:
-        raise HTTPException(status_code=404, detail="书籍不存在")
-    return book
-
-
 def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> str:
-    """
-    从全书 Markdown 中提取指定章节文本。
-    简单策略：按「第X章」模式分割；如果找不到，返回前 1/N 的文本。
-    """
     import re
     pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
     parts = re.split(pattern, full_text)
@@ -326,7 +363,6 @@ def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> 
         if chapter <= len(chapters):
             return chapters[chapter - 1]
 
-    # fallback：均分
     chunk_size = len(full_text) // max(total_chapters, 1)
     start = (chapter - 1) * chunk_size
     end = start + chunk_size if chapter < total_chapters else len(full_text)
@@ -334,12 +370,10 @@ def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> 
 
 
 def _is_chapter_end(response: str) -> bool:
-    """检测 AI 回应是否标识了本章结束"""
     markers = ["本章完成", "本章结束", "进入下一章", "章节总结", "本章用户理解的所有概念"]
     return any(m in response for m in markers)
 
 
 def async_session():
-    """创建独立的数据库会话（用于流式回调中保存数据）"""
     from app.database import async_session as _session
     return _session()

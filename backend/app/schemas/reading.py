@@ -3,7 +3,9 @@ from uuid import UUID
 
 
 class ModeSelection(BaseModel):
-    mode: str = "quick"  # quick / balanced / deep
+    book_id: UUID
+    mode: str = "quick"    # quick / balanced / deep
+    language: str = "zh"   # zh / en
 
 
 class AssessmentRequest(BaseModel):
@@ -40,3 +42,4 @@ class ProgressResponse(BaseModel):
     total_rounds: int
     status: str
     progress_percent: int
+    last_messages: list | None = None  # 断点续接用（resume 接口返回）

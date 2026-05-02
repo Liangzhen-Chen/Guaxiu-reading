@@ -19,6 +19,12 @@ class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class WechatLoginRequest(BaseModel):
+    code: str  # wx.login() 返回的临时 code
+    nickname: str | None = None
+    avatar_url: str | None = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -21,14 +21,21 @@ class WikiEntry(Base):
     concept_name: Mapped[str] = mapped_column(String(300), nullable=False)
     chapter_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # 类型：concept（概念） 或 viewpoint（观点）
+    entry_type: Mapped[str] = mapped_column(String(20), default="concept", nullable=False)
+
     # 内容
-    ai_definition: Mapped[str] = mapped_column(Text, nullable=True)    # AI 的定义
-    user_understanding: Mapped[str] = mapped_column(Text, nullable=True)  # 用户自己的理解
-    notes: Mapped[str] = mapped_column(Text, nullable=True)            # 用户手动笔记
+    ai_definition: Mapped[str] = mapped_column(Text, nullable=True)
+    user_understanding: Mapped[str] = mapped_column(Text, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # 证据/论据/例子/数据（JSONB）
+    # [{"type": "实验", "content": "Stroop效应——..."}, {"type": "案例", "content": "球拍和球..."}]
+    evidence: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     # 标签 + 来源引用
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)  # 原文出处
+    source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 知识图谱 —— 自引用，支持跨书概念关联
     parent_concept_id: Mapped[uuid.UUID | None] = mapped_column(

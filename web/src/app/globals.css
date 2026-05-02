@@ -1,0 +1,4 @@
+@import "tailwindcss";
+body { background: #fff; color: #1d1d1f; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", sans-serif; }
+.font-display { font-family: "Noto Serif SC", "PingFang SC", serif; }
+input:focus { outline: none; }
