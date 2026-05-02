@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { track } from "../track";
 
-const API = "https://xiugua-reading.cn";
+const API = "https://api.xiugua-reading.cn";
 function getToken() { if (typeof window === "undefined") return ""; return localStorage.getItem("token") || ""; }
 
 interface Entry {

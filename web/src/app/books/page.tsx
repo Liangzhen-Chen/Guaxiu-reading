@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-const API = "https://xiugua-reading.cn";
+const API = "https://api.xiugua-reading.cn";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 
 export default function BooksPage() {
