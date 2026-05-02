@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-const API = "http://122.51.236.219:8000";
+const API = "https://xiugua-reading.cn";
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);

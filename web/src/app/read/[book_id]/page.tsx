@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 
-const API = "http://122.51.236.219:8000";
+const API = "https://xiugua-reading.cn";
 function getToken() { return localStorage.getItem("token") || ""; }
 function getLang() { return localStorage.getItem("lang") || "zh"; }
 
