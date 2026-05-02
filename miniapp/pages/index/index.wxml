@@ -1,0 +1,13 @@
+<view class="container">
+  <view class="header">朽瓜 Xiugua</view>
+  <view class="list">
+    <view wx:for="{{books}}" wx:key="id" class="card" bindtap="openBook" data-id="{{item.id}}">
+      <view class="title">{{item.title}}</view>
+      <view class="meta">{{item.author || '未知'}} · {{item.file_format}}</view>
+      <progress percent="{{item.progress_percent}}" stroke-width="3" activeColor="#1d1d1f" backgroundColor="#d2d2d7"/>
+      <view class="status">{{item.progress_status === 'not_started' ? '未开始' : item.progress_percent + '%'}}</view>
+    </view>
+    <view wx:if="{{books.length===0}}" class="empty">书架上还没有书</view>
+  </view>
+  <button class="btn" bindtap="login">微信登录</button>
+</view>

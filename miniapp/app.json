@@ -1,0 +1,12 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/read/read",
+    "pages/wiki/wiki"
+  ],
+  "window": {
+    "navigationBarTitleText": "Xiugua",
+    "navigationBarBackgroundColor": "#fff",
+    "backgroundColor": "#f5f5f7"
+  }
+}

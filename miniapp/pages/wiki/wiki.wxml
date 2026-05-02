@@ -1,0 +1,9 @@
+<view class="container">
+  <input class="search" placeholder="搜索概念…" bindinput="onSearch" value="{{query}}"/>
+  <view wx:for="{{entries}}" wx:key="id" class="card">
+    <view class="tag">{{item.entry_type === 'concept' ? '概念' : '观点'}}</view>
+    <view class="title">{{item.concept_name}}</view>
+    <view class="desc">{{item.ai_definition}}</view>
+  </view>
+  <view wx:if="{{entries.length===0}}" class="empty">知识库为空</view>
+</view>

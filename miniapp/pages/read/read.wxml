@@ -1,0 +1,12 @@
+<scroll-view scroll-y class="chat">
+  <view wx:for="{{messages}}" wx:key="index" class="msg {{item.role}}">{{item.content}}</view>
+  <view wx:if="{{satisfaction}}" class="satisfaction">
+    <text>回答有帮助吗？</text>
+    <text bindtap="rate" data-ok="1">👍</text>
+    <text bindtap="rate" data-ok="0">👎</text>
+  </view>
+</scroll-view>
+<view class="input-bar">
+  <input bindinput="onInput" value="{{input}}" placeholder="写下你的理解…" confirm-type="send" bindconfirm="send"/>
+  <button bindtap="send" size="mini">发送</button>
+</view>
