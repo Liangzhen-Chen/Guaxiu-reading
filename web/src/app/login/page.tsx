@@ -27,7 +27,7 @@ export default function LoginPage() {
       {err && <p className="text-sm text-red-500 text-center mb-4">{err}</p>}
       <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-4 placeholder:text-[#86868b]" placeholder={t("email", lang)} value={email} onChange={e => setEmail(e.target.value)} />
       <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-8 placeholder:text-[#86868b]" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-      <button onClick={submit} className="w-full rounded-full bg-[#1d1d1f] text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3">{t("login", lang)}</button>
+      <button onClick={submit} className="cursor-pointer w-full rounded-full bg-[#1d1d1f] text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3">{t("login", lang)}</button>
       <div className="text-center text-sm text-[#86868b]">{t("noAccount", lang)}<a href="/register" className="text-[#1d1d1f] underline">{t("register", lang)}</a></div>
 
       <div className="relative my-8">
