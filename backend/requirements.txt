@@ -1,0 +1,16 @@
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+sqlalchemy==2.0.*
+asyncpg==0.30.*
+alembic==1.14.*
+pydantic==2.10.*
+pydantic-settings==2.7.*
+python-jose[cryptography]==3.3.*
+passlib[bcrypt]==1.7.*
+python-multipart==0.0.*
+httpx==0.28.*
+openai==1.58.*
+paddleocr>=3.5.0
+paddlepaddle>=3.0.0
+pymupdf==1.25.*
+ebooklib==0.18.*
