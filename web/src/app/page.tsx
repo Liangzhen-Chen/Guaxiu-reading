@@ -18,6 +18,7 @@ const content = {
 export default function Landing() {
   const { lang } = useLang();
   useEffect(() => { track("page_view"); }, []);
+  const loggedIn = typeof window !== "undefined" && localStorage.getItem("token");
   const c = content;
   return (
     <div className="min-h-[75vh] flex flex-col items-center justify-center text-center">
@@ -34,8 +35,8 @@ export default function Landing() {
         ))}
       </div>
 
-      <Link href="/login" className="inline-block rounded-full bg-[#1d1d1f] text-white px-10 py-3.5 text-sm font-medium hover:bg-black transition-colors tracking-wide">
-        {c.cta[lang]}
+      <Link href={loggedIn ? "/books" : "/login"} className="inline-block rounded-full bg-[#1d1d1f] text-white px-10 py-3.5 text-sm font-medium hover:bg-black transition-colors tracking-wide">
+        {loggedIn ? (lang === "zh" ? "进入书架" : "My Books") : c.cta[lang]}
       </Link>
 
       <p className="text-xs text-[#86868b] mt-6">xiugua-reading.cn</p>
