@@ -8,7 +8,9 @@ const API = "https://api.xiugua-reading.cn";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 
 export default function BooksPage() {
-  const [books, setBooks] = useState<any[]>([]); const [up, setUp] = useState(false);
+  const [books, setBooks] = useState<any[]>([]);
+  const [upProgress, setUpProgress] = useState(0);
+  const [upStatus, setUpStatus] = useState<"" | "uploading" | "parsing" | "done" | "error">("");
   const router = useRouter(); const { lang } = useLang();
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
@@ -19,12 +21,31 @@ export default function BooksPage() {
     else { localStorage.removeItem("token"); router.push("/login"); }
   }
 
-  async function doUp(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]; if (!f) return; setUp(true);
+  function doUp(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    setUpStatus("uploading"); setUpProgress(0);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API + "/api/books/upload");
+    xhr.setRequestHeader("Authorization", "Bearer " + T());
+
+    xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round((ev.loaded / ev.total) * 100)); };
+
+    xhr.onload = async () => {
+      if (xhr.status === 201) {
+        setUpStatus("done");
+        track("book_import", { format: f.name.split(".").pop() });
+        await load();
+        setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 2000);
+      } else {
+        setUpStatus("error");
+        setTimeout(() => setUpStatus(""), 3000);
+      }
+    };
+    xhr.onerror = () => { setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); };
+
     const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
-    await fetch(API + "/api/books/upload", { method: "POST", headers: { Authorization: `Bearer ${T()}` }, body: fd });
-    track("book_import", { format: f.name.split(".").pop() });
-    await load(); setUp(false);
+    xhr.send(fd);
   }
 
   return (
@@ -32,10 +53,18 @@ export default function BooksPage() {
       <div className="flex items-center justify-between mb-10">
         <h1 className="font-display text-3xl font-bold text-[#1d1d1f]">{t("bookshelf", lang)}</h1>
         <label className="cursor-pointer inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] text-white px-5 py-2 text-sm font-medium hover:bg-black transition-colors">
-          {up ? t("uploading", lang) : t("importBook", lang)}
-          <input type="file" accept=".epub,.pdf,.txt" className="hidden" onChange={doUp} disabled={up} />
+          {upStatus === "uploading" ? `${upProgress}%` : upStatus === "done" ? "✓ 完成" : upStatus === "error" ? "✕ 失败" : t("importBook", lang)}
+          <input type="file" accept=".epub,.pdf,.txt" className="hidden" onChange={doUp} disabled={upStatus === "uploading"} />
         </label>
       </div>
+
+      {upStatus === "uploading" && (
+        <div className="mb-6">
+          <div className="h-2 rounded-full bg-[#d2d2d7]"><div className="h-2 rounded-full bg-[#1d1d1f] transition-all duration-300" style={{ width: `${upProgress}%` }} /></div>
+          <p className="text-xs text-[#86868b] mt-1">上传中… {upProgress}%</p>
+        </div>
+      )}
+
       {books.length === 0 ? (
         <div className="text-center py-24 text-[#86868b]"><p className="text-lg mb-2">{t("noBooks", lang)}</p><p className="text-sm">{t("noBooksHint", lang)}</p></div>
       ) : (
