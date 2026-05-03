@@ -13,6 +13,23 @@ from app.services.wiki_service import create_entry, search_entries, get_entries_
 router = APIRouter(prefix="/api/wiki", tags=["wiki"])
 
 
+@router.post("/batch", status_code=201)
+async def batch_create(data: list[dict], db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """批量导入 Wiki 条目（章节结束后用户选择导入）"""
+    count = 0
+    for item in data:
+        db.add(WikiEntry(
+            user_id=user.id, book_id=item.get("book_id"),
+            concept_name=item["concept_name"], entry_type=item.get("entry_type","concept"),
+            chapter_index=item.get("chapter_index"),
+            ai_definition=item.get("ai_definition",""), evidence=item.get("evidence"),
+            source_quote=item.get("source_quote"), tags=item.get("tags",[]),
+        ))
+        count += 1
+    await db.commit()
+    return {"imported": count}
+
+
 @router.get("", response_model=list[WikiEntryResponse])
 async def list_entries(
     book_id: uuid.UUID | None = None,

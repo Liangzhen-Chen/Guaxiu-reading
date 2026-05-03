@@ -259,14 +259,16 @@ async def reading_chat(
                             ))
                             count += 1
 
+                        # 将提取结果作为特殊标记传给前端，让用户选择导入
+                        yield f"\n\n<!--WIKI_SELECTION:{json.dumps(concepts_data, ensure_ascii=False)}-->"
                         total = book.chapter_count or 1
                         if chapter >= total:
                             progress2.status = "completed"
-                            yield f"\n\n[全书导读完成！{count} 条概念/观点已存入 Wiki。]"
+                            yield f"\n\n[全书导读完成！请在上方选择要导入 Wiki 的概念。]"
                         else:
                             progress2.current_chapter = chapter + 1
                             progress2.status = "paused"
-                            yield f"\n\n[第{chapter}章完成。{count} 条概念/观点已提取。输入任意内容进入第{chapter + 1}章。]"
+                            yield f"\n\n[第{chapter}章完成。请在上方选择要导入 Wiki 的概念。输入任意内容进入第{chapter + 1}章。]"
                     except Exception as e:
                         yield f"\n\n[概念提取出错: {e}]"
 
