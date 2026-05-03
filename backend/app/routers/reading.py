@@ -291,6 +291,21 @@ async def get_progress(
     progress = book.progress
     resp = _to_progress_response(book, progress)
 
+    # 提取章节框架概念用于前端左侧引导栏
+    if progress and progress.assessment_result:
+        try:
+            stored = json.loads(progress.assessment_result)
+            ch_key = str(max(progress.current_chapter, 1))
+            fw = stored.get("chapter_frameworks", {}).get(ch_key, {})
+            def _theses(node):
+                items = []
+                if isinstance(node, dict):
+                    if node.get("thesis"): items.append(node["thesis"])
+                    for b in node.get("branches", []): items.extend(_theses(b))
+                return items
+            resp.chapter_concepts = _theses(fw.get("argument_tree", {}))
+        except: pass
+
     if include_history and progress and progress.status not in ("not_started",):
         chapter = max(progress.current_chapter, 1)
         prev = await db.execute(
