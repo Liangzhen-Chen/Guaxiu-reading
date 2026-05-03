@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { API } from "./config";
+import { API } from "../config";
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);

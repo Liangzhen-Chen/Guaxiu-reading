@@ -1,4 +1,4 @@
-import { API } from "../config";
+import { API } from "./config";
 export function track(event: string, props?: Record<string, any>, durationMs?: number) {
   const page = typeof window !== "undefined" ? window.location.pathname : "";
   fetch(API + "/api/analytics/event", {

@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { track } from "../track";
 
-import { API } from "./config";
+import { API } from "../config";
 function getToken() { if (typeof window === "undefined") return ""; return localStorage.getItem("token") || ""; }
 
 interface Entry {
