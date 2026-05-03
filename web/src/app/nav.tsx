@@ -17,6 +17,7 @@ export function Nav() {
       <div className="flex gap-5 text-sm text-[#86868b] items-center">
         {show && <Link href="/books" className="hover:text-[#1d1d1f]">{t("bookshelf", lang)}</Link>}
         {show && <Link href="/wiki" className="hover:text-[#1d1d1f]">{t("wiki", lang)}</Link>}
+        {show && <Link href="/profile" className="hover:text-[#1d1d1f]">{lang === "zh" ? "我的" : "Me"}</Link>}
         {!show && p !== "/login" && <Link href="/login" className="hover:text-[#1d1d1f]">{t("login", lang)}</Link>}
         <button onClick={() => { if (lang !== "zh") { localStorage.setItem("lang", "zh"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded ${lang === "zh" ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]"}`}>中文</button>
         <button onClick={() => { if (lang !== "en") { localStorage.setItem("lang", "en"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded ${lang === "en" ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]"}`}>EN</button>

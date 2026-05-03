@@ -25,6 +25,11 @@ class WechatLoginRequest(BaseModel):
     avatar_url: str | None = None
 
 
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+    avatar_url: str | None = None
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
