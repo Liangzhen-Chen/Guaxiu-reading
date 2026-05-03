@@ -104,7 +104,7 @@ async def upload_book(
             text_path = await save_parsed_text(result["text"], str(book_id))
             # Prompt A: chapter structure for first chapter
             from app.services.socratic_service import generate_chapter_structure, extract_concepts
-            ch1_text = result["text"][:5000]  # first 5000 chars
+            ch1_text = result["text"][:10000]  # first 10k chars
             framework = await generate_chapter_structure(
                 book_title=title or book.title, chapter_index=1,
                 chapter_text=ch1_text, mode="quick", language="zh",

@@ -16,7 +16,7 @@ class Book(Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     author: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    category: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # 文件信息
