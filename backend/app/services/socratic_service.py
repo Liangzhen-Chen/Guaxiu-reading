@@ -154,7 +154,7 @@ async def extract_concepts(chapter_index: int, conversation_history: list[dict],
     dialogue = "\n".join(f"{m['role']}: {m['content']}" for m in conversation_history)
     result = await chat(
         [{"role": "system", "content": prompt}, {"role": "user", "content": f"对话记录：\n\n{dialogue}"}],
-        temperature=0.3, max_tokens=1000,
+        temperature=0.3, max_tokens=3000,
     )
     import json
     try:

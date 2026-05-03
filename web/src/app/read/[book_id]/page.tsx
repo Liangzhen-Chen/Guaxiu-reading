@@ -71,7 +71,8 @@ export default function ReadPage() {
         const { done, value } = await reader.read();
         if (done) break;
         full += decoder.decode(value, { stream: true });
-        setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { ...copy[copy.length - 1], content: full }; return copy; });
+        const display = full.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^### /gm, '').replace(/^---$/gm, '');
+        setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { ...copy[copy.length - 1], content: display }; return copy; });
       }
       if (isFirstMsg) { setChapterTitle(`第 ${chapter} 章`); }
       const wikiMatch = full.match(/<!--WIKI_SELECTION:(.*?)-->/);
