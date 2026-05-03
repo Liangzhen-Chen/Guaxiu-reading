@@ -71,8 +71,9 @@ export default function ReadPage() {
         const { done, value } = await reader.read();
         if (done) break;
         full += decoder.decode(value, { stream: true });
-        const display = full.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^### /gm, '').replace(/^---$/gm, '');
-        setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { ...copy[copy.length - 1], content: display }; return copy; });
+        // 过滤 Markdown 格式 + 检测 Wiki 选择标记
+        const clean = full.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^###\s/gm, '').replace(/^---$/gm, '');
+        setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { ...copy[copy.length - 1], content: clean }; return copy; });
       }
       if (isFirstMsg) { setChapterTitle(`第 ${chapter} 章`); }
       const wikiMatch = full.match(/<!--WIKI_SELECTION:(.*?)-->/);
@@ -83,11 +84,11 @@ export default function ReadPage() {
     }
   }
 
-  
   async function batchSave(selected: any[]) {
     await fetch(`${API}/api/wiki/batch`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify(selected) });
     setWikiSelection(null); loadState();
   }
+
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   if (status === "loading") return <div className="text-center py-20 text-stone-400">…</div>;
@@ -160,46 +161,27 @@ export default function ReadPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
           <div className="bg-white rounded-2xl p-6 w-96 max-h-[70vh] overflow-y-auto shadow-xl">
             <h3 className="font-semibold mb-2 text-lg">选择导入 Wiki</h3>
-            <p className="text-xs text-stone-400 mb-4">勾选要保存的概念，点击确认导入</p>
-            <div className="space-y-2" id="wiki-select-list">
+            <p className="text-xs text-stone-400 mb-4">勾选要保存的概念</p>
+            <div className="space-y-2">
               {wikiSelection.concepts?.map((c: any, i: number) => (
                 <label key={`c${i}`} className="flex items-start gap-2 p-2 rounded-lg hover:bg-stone-50 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="mt-0.5" data-idx={i} data-type="concept" />
+                  <input type="checkbox" defaultChecked className="mt-0.5" />
                   <div><div className="text-sm font-medium">{c.name}</div><div className="text-xs text-stone-400">{c.definition?.substring(0, 80)}</div></div>
                 </label>
               ))}
               {wikiSelection.viewpoints?.map((v: any, i: number) => (
                 <label key={`v${i}`} className="flex items-start gap-2 p-2 rounded-lg hover:bg-stone-50 cursor-pointer">
-                  <input type="checkbox" defaultChecked className="mt-0.5" data-idx={i} data-type="viewpoint" />
+                  <input type="checkbox" defaultChecked className="mt-0.5" />
                   <div><div className="text-sm font-medium">💬 {v.statement?.substring(0, 60)}</div></div>
                 </label>
               ))}
             </div>
             <div className="flex gap-2 mt-4">
-              <button onClick={() => {
-                const checks = document.querySelectorAll("#wiki-select-list input[type=checkbox]");
-                const selected: any[] = [];
-                checks.forEach((cb: any) => {
-                  if (cb.checked) {
-                    const idx = parseInt(cb.dataset.idx);
-                    const type = cb.dataset.type;
-                    const items = type === "concept" ? wikiSelection.concepts : wikiSelection.viewpoints;
-                    const item = items[idx];
-                    selected.push({
-                      concept_name: type === "concept" ? item.name : item.statement,
-                      entry_type: type,
-                      ai_definition: type === "concept" ? item.definition : item.statement,
-                      evidence: item.evidence,
-                      tags: item.tags,
-                      source_quote: item.source_quote,
-                      chapter_index: wikiSelection.concepts?.[0]?.source_chapter || 0,
-                    });
-                  }
-                });
-                batchSave(selected);
-              }} className="cursor-pointer flex-1 rounded-xl py-2.5 text-sm font-medium text-white bg-stone-900">导入所选</button>
               <button onClick={() => setWikiSelection(null)} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm text-stone-400 border">取消</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
