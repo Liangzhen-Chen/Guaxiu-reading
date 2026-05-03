@@ -21,16 +21,21 @@ export default function BooksPage() {
     else { localStorage.removeItem("token"); router.push("/login"); }
   }
 
-  async function doUp(e: React.ChangeEvent<HTMLInputElement>) {
+  function doUp(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
-    setUpStatus("uploading"); setUpProgress(10);
-    try {
-      const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
-      const res = await fetch(API + "/api/books/upload", { method: "POST", headers: { Authorization: `Bearer ${T()}` }, body: fd });
-      if (res.ok) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
-      else { const err = await res.json(); setUpStatus("error"); alert(err.detail || "上传失败"); }
-    } catch (e: any) { setUpStatus("error"); alert(e.message || "网络错误"); }
-    setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
+    setUpStatus("uploading"); setUpProgress(0);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API + "/api/books/upload");
+    xhr.setRequestHeader("Authorization", "Bearer " + T());
+    xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
+    xhr.onload = async () => {
+      if (xhr.status === 201) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
+      else { setUpStatus("error"); try { alert(JSON.parse(xhr.responseText).detail || "失败"); } catch(_) { alert("上传失败"); } }
+      setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
+    };
+    xhr.onerror = () => { setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); };
+    const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
+    xhr.send(fd);
   }
 
   const [deleting, setDeleting] = useState<string>("");
