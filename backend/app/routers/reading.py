@@ -390,7 +390,24 @@ async def resume_reading(
     book = await _get_book(db, book_id, user.id)
     progress = book.progress
     if not progress:
-        raise HTTPException(status_code=400, detail="尚未开始导读")
+        # Return book info for overview page
+        resp = ProgressResponse(
+            book_id=book.id, book_title=book.title,
+            mode="quick", current_chapter=0, total_chapters=book.chapter_count or 1,
+            total_rounds=0, status="not_started", progress_percent=0,
+        )
+        try:
+            if book.category:
+                framework = json.loads(book.category)
+                def _t(node):
+                    items = []
+                    if isinstance(node, dict):
+                        if node.get("thesis"): items.append(node["thesis"])
+                        for b in node.get("branches", []): items.extend(_t(b))
+                    return items
+                resp.chapter_concepts = _t(framework.get("argument_tree", {}))
+        except: pass
+        return resp
 
     resp = _to_progress_response(book, progress)
 

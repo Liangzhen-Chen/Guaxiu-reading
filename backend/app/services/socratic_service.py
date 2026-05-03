@@ -122,11 +122,30 @@ async def generate_chapter_structure(
         [{"role": "system", "content": prompt}, {"role": "user", "content": chapter_text}],
         temperature=0.3, max_tokens=2000,
     )
-    import json
+    import json, re
     try:
         return json.loads(result)
     except json.JSONDecodeError:
-        return {"error": "章节框架解析失败", "raw": result[:500]}
+        pass
+    # Try to extract JSON from markdown code block
+    m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', result, re.DOTALL)
+    if m:
+        try: return json.loads(m.group(1))
+        except json.JSONDecodeError: pass
+    # Try to extract JSON object from text
+    m = re.search(r'\{.*\}', result, re.DOTALL)
+    if m:
+        try: return json.loads(m.group(0))
+        except json.JSONDecodeError: pass
+    # Try to fix truncated JSON by closing braces
+    json_str = result.strip()
+    if json_str.startswith('{'):
+        # Count braces and close if needed
+        open_cnt = json_str.count('{') - json_str.count('}')
+        json_str += '}' * open_cnt
+        try: return json.loads(json_str)
+        except json.JSONDecodeError: pass
+    return {"error": "章节框架解析失败", "raw": result[:500]}
 
 
 async def socratic_chat_stream(
@@ -168,9 +187,29 @@ async def generate_assessment_question(
     book_title: str, author: str, category: str,
     conversation_history: list[dict], language: str = "zh",
 ) -> str:
-    """Prompt D: 生成下一轮背景评估问题"""
+    """Prompt D: 生成下一轮背景评估问题（选择题卡片格式）"""
+    import json, re
     prompt = _p("assessment", language).format(
         book_title=book_title, author=author or "Unknown", category=category or "General"
     )
     messages = [{"role": "system", "content": prompt}, *conversation_history]
-    return await chat(messages, temperature=0.7)
+    result = await chat(messages, temperature=0.7)
+
+    # Try to parse as JSON directly
+    try: json.loads(result); return result
+    except (json.JSONDecodeError, TypeError): pass
+
+    # Try markdown code block
+    m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', result, re.DOTALL)
+    if m:
+        try: json.loads(m.group(1)); return m.group(1)
+        except (json.JSONDecodeError, TypeError): pass
+
+    # Try extracting JSON object
+    m = re.search(r'\{.*\}', result, re.DOTALL)
+    if m:
+        try: json.loads(m.group(0)); return m.group(0)
+        except (json.JSONDecodeError, TypeError): pass
+
+    # Fallback: wrap as plain text question
+    return json.dumps({"question": result[:200], "options": []}, ensure_ascii=False)

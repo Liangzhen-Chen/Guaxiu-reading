@@ -42,4 +42,5 @@ class ProgressResponse(BaseModel):
     total_rounds: int
     status: str
     progress_percent: int
-    last_messages: list | None = None  # 断点续接用（resume 接口返回）
+    last_messages: list | None = None
+    chapter_concepts: list | None = None

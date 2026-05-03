@@ -72,7 +72,7 @@ def _parse_epub(file_path: str) -> tuple[str, list[str]]:
     return text, warnings, toc_chapters
 
 
-def _parse_pdf(file_path: str) -> tuple[str, list[str]]:
+def _parse_pdf(file_path: str) -> tuple[str, list[str], list[str]]:
     """PDF 解析。先 PyMuPDF 提取文字层；扫描版走 PaddleOCR。"""
     import fitz
     warnings = []
@@ -93,32 +93,6 @@ def _parse_pdf(file_path: str) -> tuple[str, list[str]]:
     return "\n\n".join(pages_text), warnings, []
 
 
-def _parse_pdf(file_path: str) -> tuple[str, list[str]]:
-    """
-    PDF 解析。
-    先用 PyMuPDF 尝试提取文字层；如果文字层几乎为空（扫描版），
-    则走 PaddleOCR 流水线。
-    """
-    import fitz  # PyMuPDF
-    warnings = []
-    doc = fitz.open(file_path)
-    pages_text = []
-    total_chars = 0
-
-    for page in doc:
-        text = page.get_text()
-        pages_text.append(text)
-        total_chars += len(text.strip())
-
-    doc.close()
-
-    if total_chars < 100:  # 扫描版 PDF，几乎没有文字层
-        warnings.append("检测到扫描版 PDF，启用 PaddleOCR 识别")
-        return _parse_pdf_with_ocr(file_path), warnings
-
-    return "\n\n".join(pages_text), warnings
-
-
 def _parse_pdf_with_ocr(file_path: str) -> str:
     """
     PaddleOCR 版分析 + OCR。
@@ -130,28 +104,38 @@ def _parse_pdf_with_ocr(file_path: str) -> str:
     try:
         from paddleocr import PPStructureV3
         engine = PPStructureV3()
-        result = engine(file_path)
+        result = engine.predict(file_path)
         return _structure_result_to_markdown(result)
     except ImportError:
         raise ImportError("PaddleOCR 未安装。请运行: pip install paddleocr")
 
 
 def _structure_result_to_markdown(result: list) -> str:
-    """PaddleOCR 结构 → 统一 Markdown"""
+    """PaddleOCR predict 结果 → 统一 Markdown"""
     lines = []
-    for item in result:
-        item_type = item.get("type", "")
-        if item_type == "text":
-            lines.append(item.get("res", ""))
-        elif item_type == "table":
-            lines.append(item.get("res", ""))  # PP-Structure 直接输出 Markdown 表格
-        elif item_type == "figure":
-            caption = item.get("img_caption", "")
-            lines.append(f"> [图] {caption}" if caption else "> [图]")
-        elif item_type == "formula":
-            lines.append(f"$${item.get('res', '')}$$")
-        else:
-            lines.append(item.get("res", ""))
+    for page in result:
+        # parsing_res_list 是主要的解析结果
+        for item in page.get("parsing_res_list", []):
+            label = item.get("label", "")
+            content = item.get("content", "")
+            if label == "text":
+                lines.append(content)
+            elif label == "table":
+                lines.append(content)
+            elif label == "image":
+                lines.append("> [图]")
+            elif label == "formula":
+                lines.append(f"$${content}$$" if content else "")
+            else:
+                if content:
+                    lines.append(content)
+        # 单独的表格/公式结果
+        for t in page.get("table_res_list", []):
+            if isinstance(t, dict) and t.get("content"):
+                lines.append(t["content"])
+        for f in page.get("formula_res_list", []):
+            if isinstance(f, dict) and f.get("content"):
+                lines.append(f"$${f['content']}$$")
     return "\n\n".join(lines)
 
 

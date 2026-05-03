@@ -1,1 +1,1 @@
-export const API = "https://api.xiugua-reading.cn";
+export const API = "http://127.0.0.1:8000";

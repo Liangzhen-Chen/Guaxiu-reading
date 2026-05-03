@@ -1,8 +1,8 @@
 """书籍路由 —— 导入、列表、删除"""
 import os
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, BackgroundTasks
+from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db, async_session
@@ -46,39 +46,59 @@ async def list_books(
     return BookListResponse(items=items, total=len(items))
 
 
+@router.get("/{book_id}", response_model=BookResponse)
+async def get_book(
+    book_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """获取单本书详情"""
+    result = await db.execute(
+        select(Book).where(Book.id == book_id, Book.user_id == user.id)
+        .options(selectinload(Book.progress))
+    )
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    pct = 0
+    status_val = "not_started"
+    if book.progress:
+        pct = (book.progress.current_chapter / max(book.chapter_count or 1, 1)) * 100
+        status_val = book.progress.status
+    return BookResponse(
+        id=book.id, title=book.title, author=book.author, category=book.category,
+        cover_url=book.cover_url, file_format=book.file_format,
+        file_size_bytes=book.file_size_bytes, token_count=book.token_count,
+        chapter_count=book.chapter_count, parse_status=book.parse_status,
+        created_at=book.created_at, progress_status=status_val,
+        progress_percent=int(pct),
+    )
+
+
 @router.post("/upload", response_model=BookResponse, status_code=201)
 async def upload_book(
+    background: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(""),
     author: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """上传新书并解析"""
-    # 校验格式
+    """上传新书，立即返回，后台异步解析"""
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in (".epub", ".pdf", ".txt"):
         raise HTTPException(status_code=400, detail="支持 ePub / PDF / TXT 格式")
 
     book_id = uuid.uuid4()
-
-    # 保存原始文件
     book_dir = os.path.join(settings.book_storage_path, str(book_id))
     os.makedirs(book_dir, exist_ok=True)
     raw_path = os.path.join(book_dir, f"original{ext}")
+
     content = await file.read()
     if len(content) > settings.max_upload_size_mb * 1024 * 1024:
         raise HTTPException(status_code=400, detail=f"文件不能超过 {settings.max_upload_size_mb}MB")
     with open(raw_path, "wb") as f:
         f.write(content)
-
-    # 解析文档
-    try:
-        result = await parse_document(raw_path, file.filename or "")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"文档解析失败: {str(e)}")
-
-    text_path = await save_parsed_text(result["text"], str(book_id))
 
     book = Book(
         id=book_id, user_id=user.id,
@@ -87,39 +107,15 @@ async def upload_book(
         original_filename=file.filename or "",
         file_format=ext.lstrip("."),
         file_path=raw_path,
-        text_path=text_path,
         file_size_bytes=len(content),
-        token_count=result["token_count"],
-        chapter_count=result["chapter_count"],
-        parse_status="done",
+        parse_status="pending",
     )
     db.add(book)
     await db.commit()
     await db.refresh(book)
 
-    # Sync parse + structure analysis
-    try:
-        result = await parse_document(raw_path, file.filename or "")
-        text_path = await save_parsed_text(result["text"], str(book_id))
-        book.text_path = text_path
-        book.token_count = result["token_count"]
-        book.chapter_count = result["chapter_count"]
-        book.parse_status = "done"
-        # Prompt A: generate chapter framework for overview page
-        try:
-            from app.services.socratic_service import generate_chapter_structure
-            ch1_text = result["text"][:10000]
-            framework = await generate_chapter_structure(
-                book_title=book.title, chapter_index=1,
-                chapter_text=ch1_text, mode="quick", language="zh",
-            )
-            import json as _json
-            book.category = _json.dumps(framework, ensure_ascii=False)
-        except Exception:
-            pass  # framework generation optional, don't block upload
-    except Exception as e:
-        book.parse_status = "failed"
-        book.parse_error = str(e)
+    background.add_task(_parse_in_background, str(book_id), raw_path, file.filename or "", book.title)
+
     return BookResponse(
         id=book.id, title=book.title, author=book.author, category=book.category,
         cover_url=book.cover_url, file_format=book.file_format,
@@ -127,6 +123,76 @@ async def upload_book(
         chapter_count=book.chapter_count, parse_status=book.parse_status,
         created_at=book.created_at, progress_status="not_started", progress_percent=0,
     )
+
+
+async def _parse_in_background(book_id: str, raw_path: str, filename: str, title: str):
+    """后台解析文档 + 生成章节框架。CPU 密集部分在线程池运行，不阻塞事件循环。"""
+    import json as _json
+    import asyncio
+
+    # Step 1: CPU-heavy parsing in thread pool
+    async def _do_parse():
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _parse_sync, raw_path, filename)
+
+    try:
+        result = await _do_parse()
+    except Exception as e:
+        async with async_session() as db:
+            await db.execute(
+                update(Book).where(Book.id == book_id).values(
+                    parse_status="failed",
+                    parse_error=f"文档解析失败: {str(e)[:400]}",
+                )
+            )
+            await db.commit()
+        return
+
+    # Step 2: DB operations in main event loop
+    async with async_session() as db:
+        try:
+            text_path = await save_parsed_text(result["text"], book_id)
+
+            parse_error_val = None
+            category = None
+            try:
+                from app.services.socratic_service import generate_chapter_structure
+                ch1_text = result["text"][:10000]
+                framework = await generate_chapter_structure(
+                    book_title=title, chapter_index=1,
+                    chapter_text=ch1_text, mode="quick", language="zh",
+                )
+                if isinstance(framework, dict) and "error" in framework:
+                    raise ValueError(framework.get("error", "未返回有效 JSON"))
+                category = _json.dumps(framework, ensure_ascii=False)
+            except Exception as fe:
+                parse_error_val = f"framework: {str(fe)[:200]}"
+
+            await db.execute(
+                update(Book).where(Book.id == book_id).values(
+                    text_path=text_path,
+                    token_count=result["token_count"],
+                    chapter_count=result["chapter_count"],
+                    category=category,
+                    parse_status="done",
+                    parse_error=parse_error_val,
+                )
+            )
+            await db.commit()
+        except Exception as e:
+            await db.execute(
+                update(Book).where(Book.id == book_id).values(
+                    parse_status="failed",
+                    parse_error=str(e)[:500],
+                )
+            )
+            await db.commit()
+
+
+def _parse_sync(raw_path: str, filename: str) -> dict:
+    """同步解析文档，在线程池中运行"""
+    import asyncio
+    return asyncio.run(parse_document(raw_path, filename))
 
 
 @router.delete("/{book_id}", status_code=204)
