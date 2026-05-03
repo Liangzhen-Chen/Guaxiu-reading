@@ -3,6 +3,7 @@ import os
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
@@ -24,6 +25,7 @@ async def list_books(
     """获取用户书架"""
     result = await db.execute(
         select(Book).where(Book.user_id == user.id).order_by(Book.created_at.desc())
+        .options(selectinload(Book.progress))
     )
     books = result.scalars().all()
     items = []
