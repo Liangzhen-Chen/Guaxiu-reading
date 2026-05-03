@@ -34,8 +34,9 @@ export default function ReadPage() {
     if (d.last_messages?.length) { setMessages(d.last_messages); }
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
-    // 如果状态是 reading且没有历史消息，自动触发首条
-    if (s === "reading" && (!d.last_messages || d.last_messages.length === 0)) {
+    // 如果状态是 reading 且之前没有导读对话（评估对话不算），自动触发
+    const hasReading = d.last_messages?.some((m: any) => m.round > -1);
+    if (s === "reading" && !hasReading) {
       setTimeout(() => sendMsg("开始"), 300);
     }
   }
