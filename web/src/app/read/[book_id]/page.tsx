@@ -66,8 +66,13 @@ export default function ReadPage() {
     if (status === "assessment") {
       const res = await fetch(`${API}/api/reading/assessment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
       const d = await res.json();
-      setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: d.ai_message }]);
-      if (d.assessment_complete && !started.current) { setStatus("reading"); started.current = true; setTimeout(() => sendMsg("开始", true), 600); }
+      if (d.assessment_complete) {
+        setStatus("reading");
+        if (!started.current) { started.current = true; setTimeout(() => sendMsg("开始", true), 600); }
+        setMessages(prev => [...prev, { role: "user", content: text }]); // hide profile, only show user msg
+      } else {
+        setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: d.ai_message }]);
+      }
       setStreaming(false);
     } else {
       const isFirst = messages.length === 0;
@@ -86,7 +91,8 @@ export default function ReadPage() {
       if (isFirst) { setSummary(full); setChapterTitle(`第 ${chapter} 章`); }
       const wikiMatch = full.match(/<!--WIKI_SELECTION:(.*?)-->/);
       if (wikiMatch) { try { const d = JSON.parse(wikiMatch[1]); if (d.concepts?.length || d.viewpoints?.length) setWikiSelection(d); } catch(e) {} }
-      if (full.includes("章完成")) { loadState(); return; }
+      // Only advance chapter when AI clearly ends (not on first message)
+      if (full.includes("章完成") && messages.length > 2) { loadState(); return; }
       setStreaming(false);
     }
   }
