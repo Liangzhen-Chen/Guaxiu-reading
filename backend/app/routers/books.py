@@ -97,38 +97,29 @@ async def upload_book(
     await db.commit()
     await db.refresh(book)
 
-    # Background: Prompt A + C to understand book structure
-    async def _analyze():
+    # Sync parse + structure analysis
+    try:
+        result = await parse_document(raw_path, file.filename or "")
+        text_path = await save_parsed_text(result["text"], str(book_id))
+        book.text_path = text_path
+        book.token_count = result["token_count"]
+        book.chapter_count = result["chapter_count"]
+        book.parse_status = "done"
+        # Prompt A: generate chapter framework for overview page
         try:
-            result = await parse_document(raw_path, file.filename or "")
-            text_path = await save_parsed_text(result["text"], str(book_id))
-            # Prompt A: chapter structure for first chapter
-            from app.services.socratic_service import generate_chapter_structure, extract_concepts
-            ch1_text = result["text"][:10000]  # first 10k chars
+            from app.services.socratic_service import generate_chapter_structure
+            ch1_text = result["text"][:10000]
             framework = await generate_chapter_structure(
-                book_title=title or book.title, chapter_index=1,
+                book_title=book.title, chapter_index=1,
                 chapter_text=ch1_text, mode="quick", language="zh",
             )
-            # Store in book metadata
-            async with async_session() as s:
-                b = await s.get(Book, book_id)
-                if b:
-                    b.text_path = text_path
-                    b.token_count = result["token_count"]
-                    b.chapter_count = result["chapter_count"]
-                    b.parse_status = "done"
-                    import json
-                    b.category = json.dumps(framework, ensure_ascii=False)
-                    await s.commit()
-        except Exception as e:
-            async with async_session() as s:
-                b = await s.get(Book, book_id)
-                if b:
-                    b.parse_status = "failed"
-                    b.parse_error = str(e)
-                    await s.commit()
-    import asyncio
-    asyncio.create_task(_analyze())
+            import json as _json
+            book.category = _json.dumps(framework, ensure_ascii=False)
+        except Exception:
+            pass  # framework generation optional, don't block upload
+    except Exception as e:
+        book.parse_status = "failed"
+        book.parse_error = str(e)
     return BookResponse(
         id=book.id, title=book.title, author=book.author, category=book.category,
         cover_url=book.cover_url, file_format=book.file_format,
