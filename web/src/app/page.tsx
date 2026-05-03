@@ -32,7 +32,7 @@ export default function Landing() {
         className="btn btn-primary px-10 py-3.5 text-base tracking-wide">
         {loggedIn ? (lang === "zh" ? "进入书架 →" : "My Books →") : (lang === "zh" ? "立即开始" : "Get Started")}
       </Link>
-      <p className="text-xs mt-6" style={{color:"var(--ink-muted)"}}>xiugua-reading.cn</p>
+      <p className="text-xs mt-6" style={{color:"var(--ink-muted)"}}>xiugua-reading.cn · v2026.05.03-ux3</p>
     </div>
   );
 }
