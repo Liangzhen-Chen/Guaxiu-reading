@@ -72,14 +72,7 @@ async def upload_book(
     with open(raw_path, "wb") as f:
         f.write(content)
 
-    # 解析文档
-    try:
-        result = await parse_document(raw_path, file.filename or "")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"文档解析失败: {str(e)}")
-
-    text_path = await save_parsed_text(result["text"], str(book_id))
-
+    # 先创建记录（解析中），后台异步解析
     book = Book(
         id=book_id, user_id=user.id,
         title=title or os.path.splitext(file.filename or "未命名")[0],
@@ -87,12 +80,15 @@ async def upload_book(
         original_filename=file.filename or "",
         file_format=ext.lstrip("."),
         file_path=raw_path,
-        text_path=text_path,
         file_size_bytes=len(content),
-        token_count=result["token_count"],
-        chapter_count=result["chapter_count"],
-        parse_status="done",
+        parse_status="parsing",
     )
+    db.add(book)
+    await db.commit()
+
+    # 后台解析（不阻塞响应）
+    import asyncio
+    asyncio.create_task(_parse_background(book_id, raw_path, file.filename or ""))
     db.add(book)
     await db.commit()
     await db.refresh(book)

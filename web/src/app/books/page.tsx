@@ -15,10 +15,14 @@ export default function BooksPage() {
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
 
+  async function api(url: string, opts?: RequestInit) {
+    const res = await fetch(url, { ...opts, headers: { ...opts?.headers, Authorization: `Bearer ${T()}` } });
+    if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); }
+    return res;
+  }
   async function load() {
-    const res = await fetch(API + "/api/books", { headers: { Authorization: `Bearer ${T()}` } });
+    const res = await api(API + "/api/books");
     if (res.ok) setBooks((await res.json()).items || []);
-    else { localStorage.removeItem("token"); router.push("/login"); }
   }
 
   function doUp(e: React.ChangeEvent<HTMLInputElement>) {
@@ -29,6 +33,7 @@ export default function BooksPage() {
     xhr.setRequestHeader("Authorization", "Bearer " + T());
     xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
     xhr.onload = async () => {
+      if (xhr.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
       if (xhr.status === 201) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
       else { setUpStatus("error"); }
       setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
@@ -43,7 +48,7 @@ export default function BooksPage() {
     e.stopPropagation();
     if (deleting || !confirm("确定删除？")) return;
     setDeleting(id);
-    await fetch(API + "/api/books/" + id, { method: "DELETE", headers: { Authorization: `Bearer ${T()}` } });
+    await api(API + "/api/books/" + id, { method: "DELETE" });
     setDeleting("");
     load();
   }
