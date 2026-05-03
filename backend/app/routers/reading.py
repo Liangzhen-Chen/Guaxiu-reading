@@ -308,6 +308,21 @@ async def get_progress(
     return resp
 
 
+@router.get("/chapter/{book_id}")
+async def get_chapter_text(book_id: uuid.UUID, chapter: int = 1, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """获取指定章节的原文"""
+    book = await _get_book(db, book_id, user.id)
+    if not book.text_path:
+        raise HTTPException(status_code=404, detail="书籍文本未找到")
+    try:
+        with open(book.text_path, "r", encoding="utf-8") as f:
+            full_text = f.read()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="书籍文本未找到")
+    chapter_text = _extract_chapter_text(full_text, chapter, book.chapter_count or 1)
+    return {"chapter": chapter, "total": book.chapter_count, "text": chapter_text[:3000]}
+
+
 @router.get("/resume/{book_id}", response_model=ProgressResponse)
 async def resume_reading(
     book_id: uuid.UUID,
