@@ -20,6 +20,7 @@ export default function ReadPage() {
   const [chapterTitle, setChapterTitle] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const roundCount = useRef(0);
+  const started = useRef(false);
 
   useEffect(() => { loadState(); }, [book_id]);
 
@@ -33,12 +34,10 @@ export default function ReadPage() {
     }
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
-    if (s === "reading") { autoStart(d.last_messages); }
-  }
-
-  function autoStart(msgs: any[]) {
-    const hasReadingContent = msgs?.some((m: any) => !m.content?.includes?.("你对") && !m.content?.includes?.("你即将"));
-    if (!hasReadingContent) setTimeout(() => sendMsg("开始"), 400);
+    if (s === "reading" && !started.current) {
+      const hasContent = d.last_messages?.length > 0;
+      if (!hasContent) { started.current = true; setTimeout(() => sendMsg("开始"), 400); }
+    }
   }
 
   async function selectMode(m: string) {
@@ -56,7 +55,7 @@ export default function ReadPage() {
       const res = await fetch(`${API}/api/reading/assessment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
       const d = await res.json();
       setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: d.ai_message }]);
-      if (d.assessment_complete) { setStatus("reading"); setTimeout(() => sendMsg("开始"), 500); }
+      if (d.assessment_complete) { setStatus("reading"); if (!started.current) { started.current = true; setTimeout(() => sendMsg("开始"), 600); } }
       setStreaming(false);
     } else {
       setMessages(prev => [...prev, { role: "user", content: text }]);
@@ -72,7 +71,7 @@ export default function ReadPage() {
         if (done) break;
         full += decoder.decode(value, { stream: true });
         // 过滤 Markdown 格式 + 检测 Wiki 选择标记
-        const clean = full.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^###\s/gm, '').replace(/^---$/gm, '');
+        const clean = full.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/^###+\s?/gm, '').replace(/^---+\s?$/gm, '').replace(/^\*\s/gm, '• ').replace(/`([^`]+)`/g, '$1');
         setMessages(prev => { const copy = [...prev]; copy[copy.length - 1] = { ...copy[copy.length - 1], content: clean }; return copy; });
       }
       if (isFirstMsg) { setChapterTitle(`第 ${chapter} 章`); }
