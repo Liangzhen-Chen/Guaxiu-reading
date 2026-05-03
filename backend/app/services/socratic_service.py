@@ -148,9 +148,10 @@ async def socratic_chat_stream(
         yield token
 
 
-async def extract_concepts(chapter_index: int, conversation_history: list[dict], language: str = "zh") -> dict:
+async def extract_concepts(chapter_index: int, conversation_history: list[dict], language: str = "zh", chapter_concepts: list[str] = None) -> dict:
     """Prompt C: 从对话中提取概念和观点（含 evidence）"""
-    prompt = _p("extraction", language).format(chapter_index=chapter_index)
+    concepts_str = ", ".join(chapter_concepts) if chapter_concepts else "（未提供）"
+    prompt = _p("extraction", language).format(chapter_index=chapter_index, chapter_concepts=concepts_str)
     dialogue = "\n".join(f"{m['role']}: {m['content']}" for m in conversation_history)
     result = await chat(
         [{"role": "system", "content": prompt}, {"role": "user", "content": f"对话记录：\n\n{dialogue}"}],

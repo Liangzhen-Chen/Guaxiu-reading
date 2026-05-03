@@ -246,10 +246,24 @@ async def reading_chat(
                             for m in all_chapter_msgs.scalars().all()
                         ]
                         full_chapter_history.append({"role": "assistant", "content": full_response})
+                        # Extract concepts from argument_tree to pass as reference
+                        ch_concepts = []
+                        try:
+                            ch_key = str(chapter)
+                            fw = json.loads(progress.assessment_result).get("chapter_frameworks", {}).get(ch_key, {})
+                            def _theses(node):
+                                items = []
+                                if isinstance(node, dict):
+                                    if node.get("thesis"): items.append(node["thesis"])
+                                    for b in node.get("branches", []): items.extend(_theses(b))
+                                return items
+                            ch_concepts = _theses(fw.get("argument_tree", {}))
+                        except: pass
                         concepts_data = await extract_concepts(
                             chapter,
                             full_chapter_history,
                             language=progress.language,
+                            chapter_concepts=ch_concepts,
                         )
                         count = 0
                         for c in concepts_data.get("concepts", []):
@@ -335,6 +349,19 @@ async def get_progress(
             for m in prev.scalars().all()[-6:]  # 最近 6 条
         ]
 
+    # For not_started books, try to get concepts from parsed framework
+    if not progress or progress.status == "not_started":
+        try:
+            if book.category:
+                framework = json.loads(book.category)
+                def _theses2(node):
+                    items = []
+                    if isinstance(node, dict):
+                        if node.get("thesis"): items.append(node["thesis"])
+                        for b in node.get("branches", []): items.extend(_theses2(b))
+                    return items
+                resp.chapter_concepts = _theses2(framework.get("argument_tree", {}))
+        except: pass
     return resp
 
 
@@ -380,6 +407,19 @@ async def resume_reading(
         for m in prev.scalars().all()
     ]
 
+    # For not_started books, try to get concepts from parsed framework
+    if not progress or progress.status == "not_started":
+        try:
+            if book.category:
+                framework = json.loads(book.category)
+                def _theses2(node):
+                    items = []
+                    if isinstance(node, dict):
+                        if node.get("thesis"): items.append(node["thesis"])
+                        for b in node.get("branches", []): items.extend(_theses2(b))
+                    return items
+                resp.chapter_concepts = _theses2(framework.get("argument_tree", {}))
+        except: pass
     return resp
 
 

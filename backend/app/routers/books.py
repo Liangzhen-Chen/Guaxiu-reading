@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
+from app.database import get_db, async_session
 from app.models.user import User
 from app.models.book import Book
 from app.models.reading_progress import ReadingProgress
@@ -96,6 +96,39 @@ async def upload_book(
     db.add(book)
     await db.commit()
     await db.refresh(book)
+
+    # Background: Prompt A + C to understand book structure
+    async def _analyze():
+        try:
+            result = await parse_document(raw_path, file.filename or "")
+            text_path = await save_parsed_text(result["text"], str(book_id))
+            # Prompt A: chapter structure for first chapter
+            from app.services.socratic_service import generate_chapter_structure, extract_concepts
+            ch1_text = result["text"][:5000]  # first 5000 chars
+            framework = await generate_chapter_structure(
+                book_title=title or book.title, chapter_index=1,
+                chapter_text=ch1_text, mode="quick", language="zh",
+            )
+            # Store in book metadata
+            async with async_session() as s:
+                b = await s.get(Book, book_id)
+                if b:
+                    b.text_path = text_path
+                    b.token_count = result["token_count"]
+                    b.chapter_count = result["chapter_count"]
+                    b.parse_status = "done"
+                    import json
+                    b.category = json.dumps(framework, ensure_ascii=False)
+                    await s.commit()
+        except Exception as e:
+            async with async_session() as s:
+                b = await s.get(Book, book_id)
+                if b:
+                    b.parse_status = "failed"
+                    b.parse_error = str(e)
+                    await s.commit()
+    import asyncio
+    asyncio.create_task(_analyze())
     return BookResponse(
         id=book.id, title=book.title, author=book.author, category=book.category,
         cover_url=book.cover_url, file_format=book.file_format,

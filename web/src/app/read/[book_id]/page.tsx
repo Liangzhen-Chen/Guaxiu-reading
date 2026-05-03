@@ -41,7 +41,7 @@ export default function ReadPage() {
     if (!res.ok) { setStatus("select-mode"); return; }
     const d = await res.json();
     setMode(d.mode); setChapter(d.current_chapter||1); setTotal(d.total_chapters||0);
-    if (d.chapter_concepts?.length) setConcepts(d.chapter_concepts);
+    if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
     if (d.last_messages?.length) setMessages(d.last_messages.map((m:any)=>({role:m.role,content:m.content})));
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
@@ -107,14 +107,36 @@ export default function ReadPage() {
   if (status === "loading") return <div className="text-center py-20 text-stone-400">…</div>;
   if (status === "select-mode") {
     return (
-      <div className="max-w-lg mx-auto mt-16">
-        <h1 className="font-display text-2xl mb-8 text-center text-stone-800">{L()==="zh"?"选择阅读深度":"Choose Depth"}</h1>
-        {[{id:"quick",t:"快速导读",d:"AI讲解为主，15分钟/章",icon:"⚡"},{id:"balanced",t:"原文交互",d:"原文与对话交替，30分钟/章",icon:"📖"},{id:"deep",t:"深度精读",d:"逐段精读，45分钟/章",icon:"🔍"}].map(m=>(
-          <div key={m.id} onClick={()=>selectMode(m.id)} className={`cursor-pointer rounded-xl p-5 mb-3 transition-all ${mode===m.id?"border-2 border-stone-800 bg-stone-50":"border border-stone-200 bg-white"}`}>
-            <span className="text-2xl mr-3">{m.icon}</span><span className="font-display font-semibold">{m.t}</span><span className="text-sm ml-2 text-stone-400">{m.d}</span>
+      <div className="max-w-2xl mx-auto mt-8">
+        <h1 className="font-display text-2xl mb-6 text-stone-800">{L()==="zh"?"书籍概览":"Book Overview"}</h1>
+
+        {/* Concepts from parse */}
+        {concepts.length > 0 && (
+          <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6">
+            <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"本书包含":"This book covers"}</div>
+            <div className="flex flex-wrap gap-2">
+              {concepts.map((c,i)=>(
+                <span key={i} className="text-sm px-3 py-1 rounded-full bg-stone-100 text-stone-600">{c}</span>
+              ))}
+            </div>
           </div>
-        ))}
-        <button onClick={()=>selectMode(mode)} className="cursor-pointer w-full mt-6 rounded-xl py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">确认 →</button>
+        )}
+
+        {/* Mode selection */}
+        <div className="mb-6">
+          <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"阅读深度":"Reading Depth"}</div>
+          <div className="space-y-2">
+            {[{id:"quick",t:"快速导读",d:"AI讲解为主，15分钟/章",icon:"⚡"},{id:"balanced",t:"原文交互",d:"原文与对话交替，30分钟/章",icon:"📖"},{id:"deep",t:"深度精读",d:"逐段精读，45分钟/章",icon:"🔍"}].map(m=>(
+              <div key={m.id} onClick={()=>selectMode(m.id)} className={`cursor-pointer rounded-xl p-4 transition-all ${mode===m.id?"border-2 border-stone-800 bg-stone-50":"border border-stone-200 bg-white"}`}>
+                <span className="text-xl mr-2">{m.icon}</span><span className="font-display font-semibold">{m.t}</span><span className="text-sm ml-2 text-stone-400">{m.d}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={()=>selectMode(mode)} className="cursor-pointer w-full rounded-xl py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">
+          {L()==="zh"?"开始评估 →":"Start Assessment →"}
+        </button>
       </div>
     );
   }
