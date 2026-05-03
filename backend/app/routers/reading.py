@@ -213,12 +213,27 @@ async def reading_chat(
             if progress2:
                 progress2.total_rounds = round_idx + 2
 
-                # ── 章节切换（AI 自动或用户 /next 触发）──
-                if _is_chapter_end(full_response) or data.message.strip() == "/next":
+                # ── 章节切换（AI 自动、用户 /next、或 10+ 轮触发）──
+                should_end = _is_chapter_end(full_response) or data.message.strip() == "/next"
+                if not should_end and len(history) >= 20:
+                    should_end = True
+                if should_end:
                     try:
+                        # 从 DB 重新查本章全部对话，确保概念提取有足够上下文
+                        all_chapter_msgs = await db2.execute(
+                            select(Conversation).where(
+                                Conversation.book_id == book.id,
+                                Conversation.chapter_index == chapter,
+                            ).order_by(Conversation.round_index)
+                        )
+                        full_chapter_history = [
+                            {"role": m.role, "content": m.content}
+                            for m in all_chapter_msgs.scalars().all()
+                        ]
+                        full_chapter_history.append({"role": "assistant", "content": full_response})
                         concepts_data = await extract_concepts(
                             chapter,
-                            history + [{"role": "assistant", "content": full_response}],
+                            full_chapter_history,
                             language=progress.language,
                         )
                         count = 0

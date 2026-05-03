@@ -17,13 +17,14 @@ async def parse_document(file_path: str, original_filename: str) -> dict:
     ext = Path(original_filename).suffix.lower()
     warnings = []
 
+    toc = []
     match ext:
         case ".epub":
-            text, w = _parse_epub(file_path)
+            text, w, toc = _parse_epub(file_path)
         case ".pdf":
-            text, w = _parse_pdf(file_path)
+            text, w, toc = _parse_pdf(file_path)
         case ".txt":
-            text, w = _parse_txt(file_path)
+            text, w, toc = _parse_txt(file_path)
         case _:
             raise ValueError(f"不支持的文件格式: {ext}")
 
@@ -33,19 +34,29 @@ async def parse_document(file_path: str, original_filename: str) -> dict:
     return {
         "text": text,
         "token_count": count_tokens(text),
-        "chapter_count": _count_chapters(text),
+        "chapter_count": _count_chapters(text, toc),
         "warnings": warnings,
     }
 
 
 def _parse_epub(file_path: str) -> tuple[str, list[str]]:
-    """电子书：ebooklib 提取 HTML → 纯文本 → Markdown"""
+    """电子书：ebooklib 提取 HTML + TOC → 纯文本 → Markdown"""
     import ebooklib
     from ebooklib import epub
     from bs4 import BeautifulSoup
 
     warnings = []
     book = epub.read_epub(file_path)
+
+    # 提取 TOC 获取真实章节数
+    toc_chapters = []
+    for item in book.toc:
+        if isinstance(item, tuple):
+            title = item[0].title if hasattr(item[0], 'title') else str(item[0])
+            toc_chapters.append(title)
+        elif hasattr(item, 'title'):
+            toc_chapters.append(item.title)
+
     chapters = []
     for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         soup = BeautifulSoup(item.get_content(), "html.parser")
@@ -56,7 +67,30 @@ def _parse_epub(file_path: str) -> tuple[str, list[str]]:
     if not chapters:
         raise ValueError("解析 ePub 失败：未找到文本内容")
 
-    return "\n\n---\n\n".join(chapters), warnings
+    # 拼接文本：用 TOC 标题作为章节分隔符
+    text = "\n\n---\n\n".join(chapters)
+    return text, warnings, toc_chapters
+
+
+def _parse_pdf(file_path: str) -> tuple[str, list[str]]:
+    """PDF 解析。先 PyMuPDF 提取文字层；扫描版走 PaddleOCR。"""
+    import fitz
+    warnings = []
+    doc = fitz.open(file_path)
+    pages_text = []
+    total_chars = 0
+
+    for page in doc:
+        text = page.get_text()
+        pages_text.append(text)
+        total_chars += len(text.strip())
+    doc.close()
+
+    if total_chars < 100:
+        warnings.append("检测到扫描版 PDF，启用 PaddleOCR 识别")
+        return _parse_pdf_with_ocr(file_path), warnings, []
+
+    return "\n\n".join(pages_text), warnings, []
 
 
 def _parse_pdf(file_path: str) -> tuple[str, list[str]]:
@@ -121,24 +155,42 @@ def _structure_result_to_markdown(result: list) -> str:
     return "\n\n".join(lines)
 
 
-def _parse_txt(file_path: str) -> tuple[str, list[str]]:
+def _parse_txt(file_path: str) -> tuple[str, list[str], list[str]]:
     with open(file_path, "r", encoding="utf-8") as f:
         text = f.read()
-    return text, []
+    return text, [], []
 
 
-def _count_chapters(text: str) -> int:
-    """粗略统计章节数 —— 匹配「第X章」「Chapter X」等模式"""
+def _count_chapters(text: str, toc: list[str] = None) -> int:
+    """
+    统计章节数：三层 fallback
+    1. TOC（最准）
+    2. 标题模式匹配
+    3. 均分（兜底——后续导读中 AI 会修正）
+    """
+    # Layer 1: TOC
+    if toc and len(toc) > 0:
+        return len(toc)
+
+    # Layer 2: 标题模式
     import re
     patterns = [
         r"第[一二三四五六七八九十百千\d]+章",
         r"Chapter\s+\d+",
         r"CHAPTER\s+\d+",
+        r"PART\s+[IVX\d]+",
+        r"第[一二三四五六七八九十百千\d]+节",
     ]
     count = 0
     for p in patterns:
         count += len(re.findall(p, text))
-    return max(count, 1)
+
+    # 如果标题数在合理范围内（2-200），使用标题数
+    if 2 <= count <= 200:
+        return count
+
+    # Layer 3: 均分（按 5000 字/章估算）
+    return max(len(text) // 5000, 1)
 
 
 async def save_parsed_text(text: str, book_id: str) -> str:
