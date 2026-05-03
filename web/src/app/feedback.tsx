@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useLang } from "./lang";
 
-const API = "https://api.xiugua-reading.cn";
+import { API } from "./config";
 
 function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => void; lang: string }) {
   const [msg, setMsg] = useState("");

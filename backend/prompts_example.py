@@ -3,7 +3,10 @@
 复制此文件为 prompts_private.py 并填入真实 prompt 文本。
 prompts_private.py 不会上传 Git。
 
-Prompt 版本追踪见: 项目管理/03-prompts/
+Prompt 版本: v1.1 (2026-05-03)
+  - C 改为 AI 自行决定提取数量
+  - B 增加"先介绍再提问"约束
+追踪见: 项目管理/03-prompts/prompts-v1.1.md
 """
 
 # ═══════════════════════════════════════════════

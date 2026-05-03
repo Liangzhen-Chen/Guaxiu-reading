@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 
-const API = "https://api.xiugua-reading.cn";
+import { API } from "../../config";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 function L() { return typeof window !== "undefined" ? localStorage.getItem("lang") || "zh" : "zh"; }
 function trackEvent(e: string, p?: any) { fetch(API + "/api/analytics/event", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: e, page: window.location.pathname, props: p }) }).catch(() => {}); }

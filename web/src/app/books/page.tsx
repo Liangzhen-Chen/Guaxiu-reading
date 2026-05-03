@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-const API = "https://api.xiugua-reading.cn";
+import { API } from "./config";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 
 export default function BooksPage() {
@@ -28,15 +28,18 @@ export default function BooksPage() {
       const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
       const res = await fetch(API + "/api/books/upload", { method: "POST", headers: { Authorization: `Bearer ${T()}` }, body: fd });
       if (res.ok) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
-      else { const err = await res.json(); setUpStatus("error"); console.error("Upload failed:", err); }
-    } catch (e) { setUpStatus("error"); console.error(e); }
+      else { const err = await res.json(); setUpStatus("error"); alert(err.detail || "上传失败"); }
+    } catch (e: any) { setUpStatus("error"); alert(e.message || "网络错误"); }
     setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
   }
 
+  const [deleting, setDeleting] = useState<string>("");
   async function delBook(id: string, e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm("确定删除？")) return;
+    if (deleting || !confirm("确定删除？")) return;
+    setDeleting(id);
     await fetch(API + "/api/books/" + id, { method: "DELETE", headers: { Authorization: `Bearer ${T()}` } });
+    setDeleting("");
     load();
   }
 

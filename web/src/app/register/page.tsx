@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 
-const API = "https://api.xiugua-reading.cn";
+import { API } from "../config";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [pwd2, setPwd2] = useState("");

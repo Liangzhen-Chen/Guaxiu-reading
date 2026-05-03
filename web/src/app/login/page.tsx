@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-const API = "https://api.xiugua-reading.cn";
+import { API } from "../config";
 
 export default function LoginPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState("");
