@@ -45,12 +45,11 @@ export default function BooksPage() {
 
   const [deleting, setDeleting] = useState<string>("");
   async function delBook(id: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    if (deleting || !confirm("确定删除？")) return;
-    setDeleting(id);
-    await api(API + "/api/books/" + id, { method: "DELETE" });
-    setDeleting("");
-    load();
+    e.stopPropagation(); e.preventDefault();
+    if (!confirm("确定删除？")) return;
+    const res = await api(API + "/api/books/" + id, { method: "DELETE" });
+    if (res.ok) load();
+    else if (res.status !== 401) alert("删除失败");
   }
 
   return (
@@ -76,7 +75,7 @@ export default function BooksPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {books.map((b: any) => (
             <div key={b.id} onClick={() => router.push(`/read/${b.id}`)} className="group cursor-pointer relative rounded-2xl p-6 bg-[#f5f5f7] hover:bg-[#e8e8ed] transition-colors">
-              <button onClick={(e) => delBook(b.id, e)} className="absolute top-3 right-3 text-xs text-[#86868b] hover:text-red-500">✕</button>
+              <button onClick={(e) => delBook(b.id, e)} className="absolute top-2 right-2 text-sm text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-full w-7 h-7 flex items-center justify-center">✕</button>
               <h3 className="font-semibold mb-1">{b.title}</h3>
               <p className="text-sm text-[#86868b] mb-4">{b.author || "—"} · {b.file_format?.toUpperCase()}</p>
               <div className="h-1 rounded-full bg-[#d2d2d7]"><div className="h-1 rounded-full bg-[#1d1d1f] transition-all" style={{ width: `${b.progress_percent || 0}%` }} /></div>

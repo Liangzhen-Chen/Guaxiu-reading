@@ -35,7 +35,7 @@ export default function TocPage() {
         {Array.from({ length: total }, (_, i) => i + 1).map(ch => (
           <div
             key={ch}
-            onClick={() => router.push(`/read/${book_id}`)}
+            onClick={() => router.push(`/read/${book_id}?chapter=${ch}`)}
             className={`flex items-center justify-between rounded-lg px-4 py-3 cursor-pointer transition-colors ${
               ch === current ? "bg-stone-900 text-white" :
               ch < current ? "bg-stone-100 text-stone-500" :
