@@ -47,6 +47,38 @@ export default function BooksPage() {
   async function delBook(id: string, e: React.MouseEvent) {
     e.stopPropagation(); e.preventDefault();
     if (!confirm("确定删除？")) return;
+    const res = await fetch(API + "/api/books/" + id, { method: "DELETE", headers: { Authorization: `Bearer ${T()}` } });
+    if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); }
+    else if (res.status === 404) { alert("书籍不属于当前账号，请重新登录"); localStorage.removeItem("token"); router.push("/login"); }
+    else if (!res.ok) alert("删除失败");
+    else load();
+  }async function load() {
+    const res = await api(API + "/api/books");
+    if (res.ok) setBooks((await res.json()).items || []);
+  }
+
+  function doUp(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]; if (!f) return;
+    setUpStatus("uploading"); setUpProgress(0);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", API + "/api/books/upload");
+    xhr.setRequestHeader("Authorization", "Bearer " + T());
+    xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
+    xhr.onload = async () => {
+      if (xhr.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      if (xhr.status === 201) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
+      else { setUpStatus("error"); }
+      setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
+    };
+    xhr.onerror = () => { setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); };
+    const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
+    xhr.send(fd);
+  }
+
+  const [deleting, setDeleting] = useState<string>("");
+  async function delBook(id: string, e: React.MouseEvent) {
+    e.stopPropagation(); e.preventDefault();
+    if (!confirm("确定删除？")) return;
     const res = await api(API + "/api/books/" + id, { method: "DELETE" });
     if (res.ok) load();
     else if (res.status !== 401) alert("删除失败");
