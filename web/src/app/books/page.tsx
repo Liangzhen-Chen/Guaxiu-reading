@@ -30,7 +30,7 @@ export default function BooksPage() {
     xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
     xhr.onload = async () => {
       if (xhr.status === 201) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
-      else { setUpStatus("error"); try { alert(JSON.parse(xhr.responseText).detail || "失败"); } catch(_) { alert("上传失败"); } }
+      else { setUpStatus("error"); }
       setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
     };
     xhr.onerror = () => { setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); };
@@ -59,7 +59,10 @@ export default function BooksPage() {
       </div>
 
       {upStatus === "uploading" && (
-        <div className="mb-6"><div className="h-2 rounded-full bg-[#d2d2d7]"><div className="h-2 rounded-full bg-[#1d1d1f] transition-all duration-300" style={{ width: `${upProgress}%` }} /></div><p className="text-xs text-[#86868b] mt-1">上传中… {upProgress}%</p></div>
+        <div className="mb-6 bg-white rounded-xl p-4 border border-stone-200">
+          <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">上传中</span><span className="text-sm text-stone-400">{upProgress}%</span></div>
+          <div className="h-3 rounded-full bg-stone-100"><div className="h-3 rounded-full bg-stone-900 transition-all duration-300" style={{ width: `${upProgress}%` }} /></div>
+        </div>
       )}
 
       {books.length === 0 ? (
@@ -68,7 +71,7 @@ export default function BooksPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {books.map((b: any) => (
             <div key={b.id} onClick={() => router.push(`/read/${b.id}`)} className="group cursor-pointer relative rounded-2xl p-6 bg-[#f5f5f7] hover:bg-[#e8e8ed] transition-colors">
-              <button onClick={(e) => delBook(b.id, e)} className="absolute top-3 right-3 text-xs text-[#86868b] hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">✕</button>
+              <button onClick={(e) => delBook(b.id, e)} className="absolute top-3 right-3 text-xs text-[#86868b] hover:text-red-500">✕</button>
               <h3 className="font-semibold mb-1">{b.title}</h3>
               <p className="text-sm text-[#86868b] mb-4">{b.author || "—"} · {b.file_format?.toUpperCase()}</p>
               <div className="h-1 rounded-full bg-[#d2d2d7]"><div className="h-1 rounded-full bg-[#1d1d1f] transition-all" style={{ width: `${b.progress_percent || 0}%` }} /></div>

@@ -37,7 +37,8 @@ export default function WikiPage() {
       {entries.length === 0 ? (
         <div className="text-center py-24 text-stone-400">
           <p className="text-lg mb-2">知识库为空</p>
-          <p className="text-sm">完成导读后，概念会自动沉淀</p>
+          <p className="text-sm mb-6">完成导读后，概念会自动沉淀到这里</p>
+          <a href="/books" className="inline-block rounded-full bg-stone-900 text-white px-6 py-2.5 text-sm font-medium hover:bg-black transition-colors">去书架选书</a>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
