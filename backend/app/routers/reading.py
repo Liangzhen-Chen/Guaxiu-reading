@@ -105,6 +105,21 @@ async def assessment(
         book.progress.status = "reading"
         if book.progress.current_chapter == 0:
             book.progress.current_chapter = 1
+        # Eagerly generate chapter 1 framework so /resume has concepts
+        try:
+            if book.text_path:
+                with open(book.text_path, "r", encoding="utf-8") as f:
+                    ch1_text = _extract_chapter_text(f.read(), 1, book.chapter_count or 1)
+                framework = await generate_chapter_structure(
+                    book_title=book.title, chapter_index=1,
+                    chapter_text=ch1_text, mode=book.progress.mode,
+                    language=book.progress.language,
+                )
+                book.progress.assessment_result = json.dumps(
+                    {"profile": result.get("profile", {}), "chapter_frameworks": {"1": framework}},
+                    ensure_ascii=False,
+                )
+        except: pass
 
     await db.commit()
 
