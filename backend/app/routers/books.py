@@ -35,13 +35,15 @@ async def list_books(
         if b.progress:
             pct = (b.progress.current_chapter / max(b.chapter_count or 1, 1)) * 100
             status_val = b.progress.status
+        pp = b.preprocess_progress or {}
         items.append(BookResponse(
-            id=b.id, title=b.title, author=b.author, category=b.category,
+            id=b.id, title=b.title, author=b.author, category=None,  # don't send large blobs in list
             cover_url=b.cover_url, file_format=b.file_format,
             file_size_bytes=b.file_size_bytes, token_count=b.token_count,
             chapter_count=b.chapter_count, parse_status=b.parse_status,
             preprocess_status=b.preprocess_status,
-            preprocess_progress=b.preprocess_progress,
+            preprocess_progress={"total_chapters": pp.get("total_chapters", b.chapter_count or 0), "completed_chapters": pp.get("completed_chapters", 0)},
+            preprocess_done=pp.get("completed_chapters", 0),
             one_liner=b.one_liner,
             created_at=b.created_at, progress_status=status_val,
             progress_percent=int(pct),
@@ -165,39 +167,80 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
             parse_error_val = None
             category = None
             one_liner_val = None
-            try:
-                from app.services.socratic_service import generate_chapter_structure
-                ch1_text = result["text"][:10000]
-                framework = await generate_chapter_structure(
-                    book_title=title, chapter_index=1,
-                    chapter_text=ch1_text, mode="quick", language="zh",
-                )
-                if isinstance(framework, dict) and "error" in framework:
-                    raise ValueError(framework.get("error", "未返回有效 JSON"))
-                category = _json.dumps(framework, ensure_ascii=False)
-            except Exception as fe:
-                parse_error_val = f"framework: {str(fe)[:200]}"
+            final_chapter_count = result["chapter_count"]
 
-            # P1: Generate one_liner
+            # P1 FIRST: Generate one_liner + chapter validation (runs before old framework)
+            p1_ok = False
             try:
                 from app.services.socratic_service import _p
                 from app.services.llm_service import chat as llm_chat
                 from app.services.json_validator import extract_json
-                p1_prompt = _p("p1_parse", "zh")
+
+                # Build deduplicated regex chapter list
+                import re as _re
+                _pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
+                _parts = _re.split(_pattern, result["text"])
+                _seen = set()
+                regex_chapters = []
+                i = 1
+                while i < len(_parts):
+                    title = _parts[i].strip()
+                    norm = _re.sub(r'\s+', ' ', title).upper()
+                    if norm not in _seen:
+                        _seen.add(norm)
+                        snippet = (_parts[i + 1] if i + 1 < len(_parts) else "")[:60].strip().replace('\n', ' ')
+                        regex_chapters.append(f"  {title} | {snippet}")
+                    i += 2
+                regex_list = "\n".join(regex_chapters) if regex_chapters else "（未检测到章标题）"
+
+                # Sample text: skip front matter, include beginning + middle
+                full_text = result["text"]
+                text_sample = full_text[500:25000]  # skip potential ads/copyright
+                if len(full_text) > 40000:
+                    mid = len(full_text) // 2
+                    text_sample += "\n...(书中段)...\n" + full_text[mid:mid+8000]
+
+                p1_prompt = _p("p1_parse", "zh").replace("{regex_chapters}", regex_list)
                 raw = await llm_chat(
-                    [{"role": "system", "content": p1_prompt}, {"role": "user", "content": result["text"][:30000]}],
-                    temperature=0.3, max_tokens=2048,
+                    [{"role": "system", "content": p1_prompt}, {"role": "user", "content": text_sample}],
+                    temperature=0.3, max_tokens=8192,
                 )
                 p1_data = extract_json(raw)
                 one_liner_val = p1_data.get("one_liner", "")
-            except Exception:
-                pass
+                category = _json.dumps(p1_data, ensure_ascii=False)
+                # Keep only AI-validated chapters (compact format)
+                keep_chapters = p1_data.get("keep_chapters", [])
+                if not keep_chapters:
+                    # Fallback: try old validated_chapters format
+                    vc = p1_data.get("validated_chapters", [])
+                    keep_chapters = [c["regex_title"] for c in vc if c.get("action") == "keep"]
+                # Clean markers: remove snippet text after " | "
+                keep_chapters = [c.split(" | ")[0].strip() for c in keep_chapters if c.strip()]
+                if keep_chapters:
+                    final_chapter_count = len(keep_chapters)
+                    p1_ok = True
+            except Exception as e:
+                print(f"[P1] failed: {e}")
+
+            # Fallback: old Prompt A framework (only if P1 failed)
+            if not p1_ok:
+                try:
+                    from app.services.socratic_service import generate_chapter_structure
+                    ch1_text = result["text"][:10000]
+                    framework = await generate_chapter_structure(
+                        book_title=title, chapter_index=1,
+                        chapter_text=ch1_text, mode="quick", language="zh",
+                    )
+                    if isinstance(framework, dict) and "error" not in framework:
+                        category = _json.dumps(framework, ensure_ascii=False)
+                except Exception as fe:
+                    parse_error_val = f"framework: {str(fe)[:200]}"
 
             await db.execute(
                 update(Book).where(Book.id == book_id).values(
                     text_path=text_path,
                     token_count=result["token_count"],
-                    chapter_count=result["chapter_count"],
+                    chapter_count=final_chapter_count,
                     category=category,
                     one_liner=one_liner_val,
                     parse_status="done",
@@ -223,22 +266,35 @@ async def _get_book_readonly(db: AsyncSession, book_id: uuid.UUID, user_id: uuid
     return book
 
 
-def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> str:
-    import re
-    pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
-    parts = re.split(pattern, full_text)
-    if len(parts) > 2:
-        chapters = []
-        i = 1
-        while i < len(parts):
-            chapters.append(parts[i] + (parts[i + 1] if i + 1 < len(parts) else ""))
-            i += 2
-        if chapter <= len(chapters):
-            return chapters[chapter - 1]
-    chunk_size = len(full_text) // max(total_chapters, 1)
-    start = (chapter - 1) * chunk_size
-    end = start + chunk_size if chapter < total_chapters else len(full_text)
-    return full_text[start:end]
+from app.routers.reading import _extract_chapter_text, _get_chapter_markers
+
+
+async def _fetch_google_toc(title: str, author: str) -> str:
+    """尝试从 Google Books API 获取目录信息"""
+    import urllib.request
+    import urllib.parse
+    import json as _json
+    try:
+        query = f'intitle:"{title}"'
+        if author:
+            query += f'+inauthor:"{author}"'
+        url = f"https://www.googleapis.com/books/v1/volumes?q={urllib.parse.quote(query)}&maxResults=3"
+        req = urllib.request.Request(url, headers={"User-Agent": "Xiugua/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        items = data.get("items", [])
+        if not items:
+            return "（Google Books 未找到此书）"
+        # Find best match with TOC
+        for item in items:
+            info = item.get("volumeInfo", {})
+            toc = info.get("tableOfContents", "")
+            if toc:
+                book_title = info.get("title", "")
+                return f"Google Books 找到《{book_title}》，目录如下：\n{toc[:3000]}"
+        return "（Google Books 找到此书但无目录信息）"
+    except Exception as e:
+        return f"（Google Books API 查询失败: {str(e)[:100]}）"
 
 
 def _parse_sync(raw_path: str, filename: str) -> dict:
@@ -304,11 +360,16 @@ async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapt
 
     async with async_session() as db:
         try:
+            # Get AI markers from book
+            from sqlalchemy import select as _select
+            book_obj = (await db.execute(_select(Book).where(Book.id == book_id))).scalar_one_or_none()
+            markers = _get_chapter_markers(book_obj) if book_obj else None
+
             with open(text_path, "r", encoding="utf-8") as f:
                 full_text = f.read()
 
             for ch in range(1, total_chapters + 1):
-                ch_text = _extract_chapter_text(full_text, ch, total_chapters)
+                ch_text = _extract_chapter_text(full_text, ch, total_chapters, markers)
                 if not ch_text.strip():
                     continue
 
@@ -325,20 +386,14 @@ async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapt
                     chapter_wikis[str(ch)] = wiki_data
                     progress["completed_chapters"] = ch
 
-                    # Mark ready after 2 chapters
-                    if ch >= 2 and progress.get("completed_chapters", 0) >= 2:
-                        await db.execute(
-                            update(Book).where(Book.id == book_id).values(
-                                preprocess_status="ready",
-                                preprocess_progress={**progress, "chapter_wikis": chapter_wikis},
-                            )
+                    # Keep processing, mark ready_to_read after 2 chapters
+                    pp_data = {**progress, "chapter_wikis": chapter_wikis, "ready_to_read": ch >= 2}
+                    await db.execute(
+                        update(Book).where(Book.id == book_id).values(
+                            preprocess_status="ready" if ch >= 2 else "processing",
+                            preprocess_progress=pp_data,
                         )
-                    else:
-                        await db.execute(
-                            update(Book).where(Book.id == book_id).values(
-                                preprocess_progress={**progress, "chapter_wikis": chapter_wikis},
-                            )
-                        )
+                    )
                     await db.commit()
                 except ValueError:
                     continue  # Skip failed chapter, keep processing
@@ -367,10 +422,13 @@ async def delete_book(
     book = result.scalar_one_or_none()
     if not book:
         raise HTTPException(status_code=404, detail="书籍不存在")
-    # 删除文件
+    # 删除文件（忽略错误，确保 DB 记录一定删除）
     import shutil
     book_dir = os.path.join(settings.book_storage_path, str(book_id))
-    if os.path.exists(book_dir):
-        shutil.rmtree(book_dir)
+    try:
+        if os.path.exists(book_dir):
+            shutil.rmtree(book_dir)
+    except Exception:
+        pass
     await db.delete(book)
     await db.commit()

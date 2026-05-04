@@ -148,28 +148,38 @@ def _parse_txt(file_path: str) -> tuple[str, list[str], list[str]]:
 def _count_chapters(text: str, toc: list[str] = None) -> int:
     """
     统计章节数：三层 fallback
-    1. TOC（最准）
-    2. 标题模式匹配
+    1. TOC（过滤前言/目录/版权等非章条目）
+    2. 标题模式匹配（仅 Chapter/第X章，不含 Part/Section）
     3. 均分（兜底——后续导读中 AI 会修正）
     """
+    _non_chapter = {'目录', '扉页', '版权', '前言', '序', '译者序', '推荐序', '自序',
+                    '参考文献', '附录', '索引', '后记', '致谢', '导读',
+                    'Contents', 'Copyright', 'Preface', 'Index', 'Appendix',
+                    'References', 'Acknowledgments', 'Introduction'}
+
     # Layer 1: TOC
     if toc and len(toc) > 0:
-        return len(toc)
+        filtered = [t for t in toc if t.strip() not in _non_chapter]
+        if len(filtered) >= 2:
+            return len(filtered)
+        # If filtering removed too much, use original
+        if len(toc) >= 2:
+            return len(toc)
 
-    # Layer 2: 标题模式
+    # Layer 2: 标题模式（仅 Chapter，不含 Part/Section）
     import re
-    patterns = [
+    chapter_patterns = [
         r"第[一二三四五六七八九十百千\d]+章",
         r"Chapter\s+\d+",
         r"CHAPTER\s+\d+",
-        r"PART\s+[IVX\d]+",
-        r"第[一二三四五六七八九十百千\d]+节",
     ]
     count = 0
-    for p in patterns:
-        count += len(re.findall(p, text))
+    for p in chapter_patterns:
+        matches = re.findall(p, text)
+        # Deduplicate by normalized form
+        unique = set(m.strip().upper().replace(' ', '') for m in matches)
+        count += len(unique)
 
-    # 如果标题数在合理范围内（2-200），使用标题数
     if 2 <= count <= 200:
         return count
 

@@ -54,6 +54,24 @@ export default function ReadPage() {
     return () => clearInterval(t);
   }, [status, concepts.length]);
 
+  // Auto-trigger first message when status transitions — ensures closure has correct status
+  const assessmentTriggered = useRef(false);
+  const readingTriggered = useRef(false);
+  useEffect(() => {
+    if (status === "assessment" && !assessmentTriggered.current) {
+      assessmentTriggered.current = true;
+      setTimeout(() => sendMsg(L()==="zh"?"开始评估":"Start assessment", true), 400);
+    }
+    if (status === "reading" && !readingTriggered.current && started.current) {
+      readingTriggered.current = true;
+      readingFirstMsg.current = true;
+      setTimeout(() => sendMsg(L()==="zh"?"请介绍本章要点":"Introduce this chapter", true), 400);
+    }
+    // Reset triggers when leaving those states (for chapter transitions)
+    if (status !== "assessment") assessmentTriggered.current = false;
+    if (status !== "reading") readingTriggered.current = false;
+  }, [status, started.current]);
+
   async function loadChapterText(ch: number) {
     for (let i = 0; i < 3; i++) {
       const res = await fetch(`${API}/api/reading/chapter/${book_id}?chapter=${ch}`, { headers: { Authorization: `Bearer ${T()}` } });
@@ -73,19 +91,14 @@ export default function ReadPage() {
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
     if (d.current_chapter > 0) loadChapterText(d.current_chapter);
-    if (s === "reading" && !started.current && !d.last_messages?.length) {
-      started.current = true;
-      readingFirstMsg.current = true;
-      setTimeout(() => sendMsg(L()==="zh"?"请介绍本章要点":"Introduce this chapter", true), 600);
-    }
+    if (s === "reading" && !started.current) started.current = true;
+    // Auto-trigger handled by useEffect watching status changes
   }
 
   async function selectMode(m: string) {
     setMode(m);
     await fetch(`${API}/api/reading/mode`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, mode: m, language: L() }) });
     setStatus("assessment");
-    // Auto-trigger first assessment question
-    setTimeout(() => sendMsg(L()==="zh"?"开始评估":"Start assessment", true), 500);
   }
 
   async function sendMsg(msg?: string, silent?: boolean) {
@@ -104,17 +117,16 @@ export default function ReadPage() {
         setAssessmentQ(null);
         setStatus("reading");
         loadChapterText(1);
-        if (!started.current) { started.current = true; readingFirstMsg.current = true; setTimeout(() => sendMsg(L()==="zh"?"请介绍本章要点":"Introduce this chapter", true), 600); }
+        if (!started.current) { started.current = true; }
       } else {
         try {
           const parsed = JSON.parse(d.ai_message);
           if (parsed.question && parsed.options?.length) {
             setAssessmentQ(parsed);
-          } else {
-            setMessages(prev => [...prev, { role: "assistant", content: d.ai_message }]);
           }
+          // If no valid card format, just keep loading state — don't leak raw JSON to chat
         } catch {
-          setMessages(prev => [...prev, { role: "assistant", content: d.ai_message }]);
+          // JSON parse failed — keep assessmentQ null, retry on next round
         }
       }
       setStreaming(false);
@@ -132,8 +144,8 @@ export default function ReadPage() {
         if (done) break;
         full += decoder.decode(value, { stream: true });
         // v4.0: Extract V4_META marker from streamed text
-        const metaMatch = full.match(/<!--V4_META:(.*?)-->/);
-        const displayText = metaMatch ? full.replace(/<!--V4_META:.*?-->/, '').trim() : full;
+        const metaMatch = full.match(/<!--V4_META:([\s\S]*?)-->/);
+        const displayText = metaMatch ? full.replace(/<!--V4_META:[\s\S]*?-->/, '').trim() : full;
         setMessages(prev => { const copy = [...prev]; copy[copy.length-1] = { role: "assistant", content: displayText }; return copy; });
         // Parse wiki metadata when complete
         if (metaMatch) {
@@ -150,7 +162,14 @@ export default function ReadPage() {
             if (isSummary) { setChapterTitle(`第 ${chapter} 章`); }
           } catch {}
         }
-        if (full.includes("[CHAPTER_END]")) { loadState(); return; }
+        if (full.includes("[CHAPTER_END]")) {
+          setReadingMaterial("");
+          setMessages([]);
+          setChapterTitle("");
+          setStreaming(false);
+          loadState();
+          return;
+        }
       }
       if (isSummary) { setChapterTitle(`第 ${chapter} 章`); }
       setStreaming(false);
@@ -172,7 +191,17 @@ export default function ReadPage() {
         <p className="text-sm text-stone-400 mb-6">{L()==="zh"?"AI 会根据你选择的深度，调整追问的层次和对话的节奏。":"AI will adjust the depth of questioning and pace of dialogue based on your choice."}</p>
 
         {/* Concepts from parse */}
-        {concepts.length > 0 ? (
+        {/* v4.0: Wiki checklist preview (if available from preprocess) */}
+        {wikiChecklist.length > 0 ? (
+          <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6">
+            <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"本章 Wiki 预览":"Chapter Wiki Preview"}</div>
+            <div className="flex flex-wrap gap-2">
+              {wikiChecklist.map((w:any,i:number)=>(
+                <span key={i} className="text-sm px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">{w.name}</span>
+              ))}
+            </div>
+          </div>
+        ) : concepts.length > 0 ? (
           <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6">
             <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"本书核心论点":"Core Arguments"}</div>
             <div className="flex flex-wrap gap-2">
@@ -181,16 +210,7 @@ export default function ReadPage() {
               ))}
             </div>
           </div>
-        ) : pollCount.current < 10 ? (
-          <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6 text-center">
-            <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin mr-2 align-middle"></span>
-            <span className="text-sm text-stone-400">{L()==="zh"?"正在分析本书结构…":"Analyzing book structure…"}</span>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6 text-center">
-            <span className="text-sm text-stone-400">{L()==="zh"?"概念分析超时，可直接开始阅读":"Concept analysis timed out, you can start reading"}</span>
-          </div>
-        )}
+        ) : null}
 
         {/* Mode selection */}
         <div className="mb-6">
@@ -237,11 +257,10 @@ export default function ReadPage() {
             <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">本章 Wiki</div>
             {wikiChecklist.length > 0 ? wikiChecklist.map((w: any) => (
               <div key={w.id}
-                onClick={() => { if (w.status !== "pending" && w.id !== currentWikiId) { setCurrentWikiId(w.id); sendMsg(`聊聊「${w.name}」`); } }}
-                className={`text-xs px-2 py-1 rounded cursor-pointer mb-0.5 transition-colors ${
+                className={`text-xs px-2 py-1 rounded mb-0.5 ${
                   w.status === "done" ? "text-stone-300 line-through" :
                   w.id === currentWikiId || w.status === "active" ? "bg-stone-900 text-white" :
-                  "text-stone-500 hover:bg-stone-50"
+                  "text-stone-500"
                 }`}>
                 {w.status === "done" ? "✓ " : w.id === currentWikiId || w.status === "active" ? "● " : "○ "}{w.name}
               </div>
@@ -254,10 +273,9 @@ export default function ReadPage() {
         <div className="w-80 shrink-0 hidden md:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-4 max-h-[70vh] overflow-y-auto">
             <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{mode==="deep"?"原文":"阅读材料"}</div>
-            <div className="text-sm leading-relaxed text-stone-600">
-              {readingMaterial ? <span dangerouslySetInnerHTML={{__html:renderMD(readingMaterial)}}/> :
-               chapterText ? <span>{chapterText.slice(0, 3000)}</span> :
-               <span className="text-stone-400">{status==="assessment"?"开始导读后将显示阅读材料":"AI 准备中…"}</span>}
+            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap">
+              {readingMaterial ? <span>{readingMaterial}</span> :
+               <span className="text-stone-400">对话开始后，AI 生成的阅读材料会出现在这里</span>}
             </div>
           </div>
         </div>
@@ -297,7 +315,7 @@ export default function ReadPage() {
                 {chatMsgs.map((m,i)=>(
                   <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
-                      {m.role==="assistant" ? <span dangerouslySetInnerHTML={{__html:renderMD(m.content)}}/> : <span className="whitespace-pre-wrap">{m.content}</span>}
+                      {m.role==="assistant" ? <span className="whitespace-pre-wrap">{m.content}</span> : <span className="whitespace-pre-wrap">{m.content}</span>}
                     </div>
                   </div>
                 ))}

@@ -15,18 +15,23 @@ export default function BooksPage() {
   const router = useRouter(); const { lang } = useLang();
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
-  // Poll while there are parsing or preprocessing books
+  // Poll while there are parsing or incomplete preprocessing books
   useEffect(() => {
-    const needsPoll = books.some((b: any) =>
-      b.parse_status === "pending" || b.parse_status === "parsing" ||
-      b.preprocess_status === "processing"
-    );
+    const needsPoll = books.some((b: any) => {
+      if (b.parse_status === "pending" || b.parse_status === "parsing") return true;
+      if (b.preprocess_status === "processing") return true;
+      const pp = b.preprocess_progress || {};
+      return pp.total_chapters > 0 && (pp.completed_chapters || 0) < pp.total_chapters;
+    });
     if (!needsPoll) return;
     const t = setInterval(() => load(), 3000);
     return () => clearInterval(t);
-  }, [books.some((b: any) =>
-    b.parse_status === "pending" || b.parse_status === "parsing" || b.preprocess_status === "processing"
-  )]);
+  }, [books.some((b: any) => {
+    if (b.parse_status === "pending" || b.parse_status === "parsing") return true;
+    if (b.preprocess_status === "processing") return true;
+    const pp = b.preprocess_progress || {};
+    return pp.total_chapters > 0 && (pp.completed_chapters || 0) < pp.total_chapters;
+  })]);
 
   async function api(url: string, opts?: RequestInit) {
     try {
@@ -74,12 +79,21 @@ export default function BooksPage() {
   }
 
   const [deleting, setDeleting] = useState<string>("");
+  const [preprocessLoading, setPreprocessLoading] = useState(false);
   async function startPreprocess(id: string) {
-    const res = await api(API + "/api/books/" + id + "/preprocess", { method: "POST" });
-    if (res.ok) { load(); }
-    else {
-      try { const d = await res.json(); alert(d.detail || "AI帮你读启动失败"); } catch { alert("AI帮你读启动失败"); }
+    if (preprocessLoading) return;
+    setPreprocessLoading(true);
+    try {
+      const res = await api(API + "/api/books/" + id + "/preprocess", { method: "POST" });
+      if (res.ok) { await load(); }
+      else {
+        const msg = await res.text().catch(() => "");
+        alert(msg || "AI帮你读启动失败，请稍后重试");
+      }
+    } catch {
+      alert("网络错误，请稍后重试");
     }
+    setPreprocessLoading(false);
   }
   async function delBook(id: string, e: React.MouseEvent) {
     e.stopPropagation(); e.preventDefault();
@@ -127,6 +141,8 @@ export default function BooksPage() {
             const ppProgress = b.preprocess_progress || {};
             const ppDone = ppProgress.completed_chapters || 0;
             const ppTotal = ppProgress.total_chapters || b.chapter_count || 0;
+            const ppIncomplete = ppTotal > 0 && ppDone < ppTotal;
+            const ppAllDone = ppTotal > 0 && ppDone >= ppTotal;
 
             return (
             <div key={b.id}
@@ -152,23 +168,28 @@ export default function BooksPage() {
                 </div>
               ) : b.parse_status === "failed" ? (
                 <div className="text-xs text-red-400">解析失败 {b.parse_error ? `: ${b.parse_error.slice(0, 40)}` : ""}</div>
-              ) : preprocessing ? (
+              ) : preprocessing || (ready && ppIncomplete) ? (
                 <div>
                   <div className="h-1.5 rounded-full bg-stone-200 mb-1"><div className="h-1.5 rounded-full bg-stone-600 transition-all" style={{width: ppTotal>0?`${Math.round(ppDone/ppTotal*100)}%`:'20%'}}/></div>
                   <p className="text-xs text-stone-400">AI 正在阅读 第{ppDone}/{ppTotal}章</p>
+                  {ready && <p className="text-xs text-stone-400 mt-1">{lang==="zh"?"前两章已完成，可开始阅读":"First 2 chapters ready"}</p>}
                 </div>
               ) : !ready && !isReading ? (
                 <button onClick={(e) => { e.stopPropagation(); startPreprocess(b.id); }}
-                  className="w-full cursor-pointer rounded-lg py-2 text-xs font-medium bg-[#1d1d1f] text-white hover:bg-black transition-colors mt-1">
-                  AI 帮你读 →
+                  disabled={preprocessLoading}
+                  className="w-full cursor-pointer rounded-lg py-2 text-xs font-medium bg-[#1d1d1f] text-white hover:bg-black disabled:opacity-50 transition-colors mt-1">
+                  {preprocessLoading ? "启动中…" : "AI 帮你读 →"}
                 </button>
               ) : (
                 <div>
                   {isReading && (
                     <div className="h-1 rounded-full bg-[#d2d2d7] mb-1"><div className="h-1 rounded-full bg-[#1d1d1f]" style={{width:`${b.progress_percent||0}%`}}/></div>
                   )}
+                  {ppAllDone && !isReading && (
+                    <div className="flex items-center gap-1 mb-1"><span className="text-xs text-green-600">AI 已读完</span></div>
+                  )}
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-stone-400">{b.progress_status === "completed" ? "已完成" : isReading ? `${b.progress_percent}%` : `第${ppDone}/${ppTotal}章已解析`}</span>
+                    <span className="text-xs text-stone-400">{b.progress_status === "completed" ? "已完成" : isReading ? `${b.progress_percent}%` : ppAllDone ? `${ppTotal}章已解析` : `第${ppDone}/${ppTotal}章已解析`}</span>
                     {ready && !isReading && (
                       <span className="text-xs font-medium text-white bg-[#1d1d1f] px-3 py-1 rounded-full">开始阅读</span>
                     )}

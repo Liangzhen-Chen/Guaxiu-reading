@@ -109,7 +109,7 @@ async def assessment(
         try:
             if book.text_path:
                 with open(book.text_path, "r", encoding="utf-8") as f:
-                    ch1_text = _extract_chapter_text(f.read(), 1, book.chapter_count or 1)
+                    ch1_text = _extract_chapter_text(f.read(), 1, book.chapter_count or 1, _get_chapter_markers(book))
                 framework = await generate_chapter_structure(
                     book_title=book.title, chapter_index=1,
                     chapter_text=ch1_text, mode=book.progress.mode,
@@ -191,6 +191,31 @@ async def reading_chat(
     await db.commit()
     history.append({"role": "user", "content": data.message})
 
+    # /next shortcut: skip AI call, directly advance chapter
+    if data.message.strip() == "/next":
+        async def generate():
+            db2 = async_session()
+            try:
+                progress2 = (await db2.execute(
+                    select(ReadingProgress).where(ReadingProgress.book_id == book.id)
+                )).scalar_one_or_none()
+                if progress2:
+                    total = book.chapter_count or 1
+                    if chapter >= total:
+                        progress2.status = "completed"
+                        progress2.current_wiki_id = None
+                        progress2.completed_wikis = []
+                    else:
+                        progress2.current_chapter = chapter + 1
+                        progress2.status = "paused"
+                        progress2.current_wiki_id = None
+                        progress2.completed_wikis = []
+                    await db2.commit()
+                yield "[CHAPTER_END]"
+            finally:
+                await db2.close()
+        return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
+
     # 组装 P4 prompt
     mode_desc = (
         "快速模式：以AI概括为主，原文为辅。追问2-3轮即可。"
@@ -234,7 +259,7 @@ async def reading_chat(
         # Stream the display text to the user
         yield ai_text
         # Append wiki metadata for frontend
-        yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False)}-->"
+        yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))}-->"
 
         db2 = async_session()
         try:
@@ -348,7 +373,7 @@ async def get_chapter_text(book_id: uuid.UUID, chapter: int = 1, db: AsyncSessio
             full_text = f.read()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="书籍文本未找到")
-    chapter_text = _extract_chapter_text(full_text, chapter, book.chapter_count or 1)
+    chapter_text = _extract_chapter_text(full_text, chapter, book.chapter_count or 1, _get_chapter_markers(book))
     return {"chapter": chapter, "total": book.chapter_count, "text": chapter_text[:3000]}
 
 
@@ -368,6 +393,9 @@ async def resume_reading(
             mode="quick", current_chapter=0, total_chapters=book.chapter_count or 1,
             total_rounds=0, status="not_started", progress_percent=0,
         )
+        # v4.0: Build wiki_checklist from preprocess data even for not_started
+        wiki_checklist = _build_wiki_checklist(book, 1, None)
+        resp.wiki_checklist = wiki_checklist
         try:
             if book.category:
                 framework = json.loads(book.category)
@@ -389,22 +417,13 @@ async def resume_reading(
 
     # Build wiki checklist for left column
     chapter = max(progress.current_chapter, 1)
-    wiki_checklist = []
-    if book.preprocess_progress:
-        ch_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {})
-        for w in ch_wikis.get("wikis", []):
-            wiki_id = w.get("id", "")
-            status = "active" if wiki_id == progress.current_wiki_id else (
-                "done" if wiki_id in (progress.completed_wikis or []) else "pending"
-            )
-            wiki_checklist.append({"id": wiki_id, "name": w.get("name", ""), "status": status})
-    resp.wiki_checklist = wiki_checklist
+    resp.wiki_checklist = _build_wiki_checklist(book, chapter, progress)
 
-    # 加载最近对话
+    # 加载最近对话（仅当前章节，不含评估对话）
     prev = await db.execute(
         select(Conversation).where(
             Conversation.book_id == book.id,
-            Conversation.chapter_index.in_([chapter, ASSESSMENT_CHAPTER]),
+            Conversation.chapter_index == chapter,
         ).order_by(Conversation.round_index)
     )
     resp.last_messages = [
@@ -469,6 +488,23 @@ async def chapter_end(
         return {"wikis": orig_wikis}  # fallback to original
 
 
+def _build_wiki_checklist(book, chapter: int, progress) -> list:
+    """Build wiki checklist for the left column from preprocess data."""
+    items = []
+    if book.preprocess_progress:
+        ch_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {})
+        for w in ch_wikis.get("wikis", []):
+            wiki_id = w.get("id", "")
+            status = "pending"
+            if progress:
+                if wiki_id == progress.current_wiki_id:
+                    status = "active"
+                elif wiki_id in (progress.completed_wikis or []):
+                    status = "done"
+            items.append({"id": wiki_id, "name": w.get("name", ""), "status": status})
+    return items
+
+
 # ── helpers ──
 
 async def _get_book(db: AsyncSession, book_id: uuid.UUID, user_id: uuid.UUID) -> Book:
@@ -498,23 +534,81 @@ def _to_progress_response(book: Book, progress: ReadingProgress | None) -> Progr
     )
 
 
-def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> str:
+def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int,
+                          markers: list | None = None) -> str:
+    """
+    提取指定章节文本。
+    优先用 P1 验证过的 keep 章节名按位置切分；fallback 到正则。
+    """
     import re
     pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
+
+    # Strategy 1: P1-validated keepers with regex positions
+    if markers:
+        # Find all regex matches with positions
+        regex_matches = [(m.group(0), m.start()) for m in re.finditer(pattern, full_text)]
+        # Filter to only keepers (AI-validated)
+        keeper_titles = set(m.strip().upper().replace(' ', '') for m in markers)
+        keeper_positions = [(title, pos) for title, pos in regex_matches
+                           if title.strip().upper().replace(' ', '') in keeper_titles]
+        # Deduplicate by position (keep first occurrence of each title)
+        seen = set()
+        unique_positions = []
+        for title, pos in keeper_positions:
+            norm = title.strip().upper().replace(' ', '')
+            if norm not in seen:
+                seen.add(norm)
+                unique_positions.append((title, pos))
+        unique_positions.sort(key=lambda x: x[1])
+
+        if chapter <= len(unique_positions):
+            _, start_pos = unique_positions[chapter - 1]
+            if chapter < len(unique_positions):
+                _, end_pos = unique_positions[chapter]
+                return full_text[start_pos:end_pos]
+            return full_text[start_pos:]
+
+    # Strategy 2: Regex split + dedup
     parts = re.split(pattern, full_text)
     if len(parts) > 2:
-        chapters = []
+        chapter_map = {}
+        chapter_order = []
         i = 1
         while i < len(parts):
-            chapters.append(parts[i] + (parts[i + 1] if i + 1 < len(parts) else ""))
+            title = parts[i]
+            content = parts[i + 1] if i + 1 < len(parts) else ""
+            if title in chapter_map:
+                chapter_map[title] += "\n\n" + content
+            else:
+                chapter_map[title] = content
+                chapter_order.append(title)
             i += 2
+        chapters = [title + chapter_map[title] for title in chapter_order]
         if chapter <= len(chapters):
             return chapters[chapter - 1]
 
+    # Strategy 3: Even split
     chunk_size = len(full_text) // max(total_chapters, 1)
     start = (chapter - 1) * chunk_size
     end = start + chunk_size if chapter < total_chapters else len(full_text)
     return full_text[start:end]
+
+
+def _get_chapter_markers(book) -> list | None:
+    """从 book.category (P1 JSON) 提取 keep 章节标题列表"""
+    import json
+    try:
+        if book.category:
+            data = json.loads(book.category)
+            keep = data.get("keep_chapters", [])
+            if keep:
+                # Clean: remove snippet text after " | "
+                return [c.split(" | ")[0].strip() for c in keep if c.strip()]
+            vc = data.get("validated_chapters", [])
+            if vc: return [c["regex_title"] for c in vc if c.get("action") == "keep"]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return None
 
 
 def _is_chapter_end(response: str) -> bool:
