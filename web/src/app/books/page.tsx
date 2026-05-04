@@ -15,13 +15,18 @@ export default function BooksPage() {
   const router = useRouter(); const { lang } = useLang();
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
-  // Poll while there are parsing books
+  // Poll while there are parsing or preprocessing books
   useEffect(() => {
-    const hasPending = books.some((b: any) => b.parse_status === "pending" || b.parse_status === "parsing");
-    if (!hasPending) return;
+    const needsPoll = books.some((b: any) =>
+      b.parse_status === "pending" || b.parse_status === "parsing" ||
+      b.preprocess_status === "processing"
+    );
+    if (!needsPoll) return;
     const t = setInterval(() => load(), 3000);
     return () => clearInterval(t);
-  }, [books.some((b: any) => b.parse_status === "pending" || b.parse_status === "parsing")]);
+  }, [books.some((b: any) =>
+    b.parse_status === "pending" || b.parse_status === "parsing" || b.preprocess_status === "processing"
+  )]);
 
   async function api(url: string, opts?: RequestInit) {
     try {
@@ -69,6 +74,13 @@ export default function BooksPage() {
   }
 
   const [deleting, setDeleting] = useState<string>("");
+  async function startPreprocess(id: string) {
+    const res = await api(API + "/api/books/" + id + "/preprocess", { method: "POST" });
+    if (res.ok) { load(); }
+    else {
+      try { const d = await res.json(); alert(d.detail || "AI帮你读启动失败"); } catch { alert("AI帮你读启动失败"); }
+    }
+  }
   async function delBook(id: string, e: React.MouseEvent) {
     e.stopPropagation(); e.preventDefault();
     if (!confirm("确定删除？")) return;
@@ -109,25 +121,62 @@ export default function BooksPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {books.map((b: any) => {
             const parsing = b.parse_status === "pending" || b.parse_status === "parsing";
+            const preprocessing = b.preprocess_status === "processing";
+            const ready = b.preprocess_status === "ready";
+            const isReading = b.progress_status !== "not_started" && b.progress_status !== null;
+            const ppProgress = b.preprocess_progress || {};
+            const ppDone = ppProgress.completed_chapters || 0;
+            const ppTotal = ppProgress.total_chapters || b.chapter_count || 0;
+
             return (
-            <div key={b.id} onClick={() => { if (!parsing) router.push(`/read/${b.id}`); }}
-              className={`group relative rounded-2xl p-6 transition-colors ${parsing ? "bg-[#f5f5f7] cursor-default" : "bg-[#f5f5f7] hover:bg-[#e8e8ed] cursor-pointer"}`}>
+            <div key={b.id}
+              onClick={() => {
+                if (!parsing && !preprocessing) {
+                  if (ready || isReading) router.push(`/read/${b.id}`);
+                }
+              }}
+              className={`group relative rounded-2xl p-6 transition-colors ${(parsing || preprocessing) ? "bg-[#f5f5f7] cursor-default" : "bg-[#f5f5f7] hover:bg-[#e8e8ed] cursor-pointer"}`}>
               <button onClick={(e) => delBook(b.id, e)} className="absolute top-2 right-2 text-sm text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-full w-7 h-7 flex items-center justify-center z-10">✕</button>
               <h3 className={`font-semibold mb-1 ${parsing ? "text-stone-400" : ""}`}>{b.title}</h3>
-              <p className="text-sm text-[#86868b] mb-4">{b.author || "—"} · {b.file_format?.toUpperCase()}</p>
+              <p className="text-sm text-[#86868b] mb-2">{b.author || "—"} · {b.file_format?.toUpperCase()}</p>
+
+              {/* One-liner from P1 */}
+              {b.one_liner && !parsing && !preprocessing && (
+                <p className="text-xs text-[#86868b] italic mb-3 border-t border-b border-stone-200 py-2">{b.one_liner}</p>
+              )}
+
               {parsing ? (
                 <div className="flex items-center gap-2 text-xs text-stone-400">
                   <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span>
                   {b.parse_status === "pending" ? "排队中…" : "解析中…"}
-                  {b.parse_error ? <span className="text-red-400">{b.parse_error.slice(0, 30)}</span> : null}
                 </div>
               ) : b.parse_status === "failed" ? (
                 <div className="text-xs text-red-400">解析失败 {b.parse_error ? `: ${b.parse_error.slice(0, 40)}` : ""}</div>
+              ) : preprocessing ? (
+                <div>
+                  <div className="h-1.5 rounded-full bg-stone-200 mb-1"><div className="h-1.5 rounded-full bg-stone-600 transition-all" style={{width: ppTotal>0?`${Math.round(ppDone/ppTotal*100)}%`:'20%'}}/></div>
+                  <p className="text-xs text-stone-400">AI 正在阅读 第{ppDone}/{ppTotal}章</p>
+                </div>
+              ) : !ready && !isReading ? (
+                <button onClick={(e) => { e.stopPropagation(); startPreprocess(b.id); }}
+                  className="w-full cursor-pointer rounded-lg py-2 text-xs font-medium bg-[#1d1d1f] text-white hover:bg-black transition-colors mt-1">
+                  AI 帮你读 →
+                </button>
               ) : (
-                <>
-                  <div className="h-1 rounded-full bg-[#d2d2d7]"><div className="h-1 rounded-full bg-[#1d1d1f] transition-all" style={{ width: `${b.progress_percent || 0}%` }} /></div>
-                  <p className="text-xs text-[#86868b] mt-2">{b.progress_status === "completed" ? "已完成" : b.progress_status === "not_started" ? "未开始" : `${b.progress_percent}%`}</p>
-                </>
+                <div>
+                  {isReading && (
+                    <div className="h-1 rounded-full bg-[#d2d2d7] mb-1"><div className="h-1 rounded-full bg-[#1d1d1f]" style={{width:`${b.progress_percent||0}%`}}/></div>
+                  )}
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-stone-400">{b.progress_status === "completed" ? "已完成" : isReading ? `${b.progress_percent}%` : `第${ppDone}/${ppTotal}章已解析`}</span>
+                    {ready && !isReading && (
+                      <span className="text-xs font-medium text-white bg-[#1d1d1f] px-3 py-1 rounded-full">开始阅读</span>
+                    )}
+                    {isReading && (
+                      <span className="text-xs text-stone-400 border border-stone-200 px-3 py-1 rounded-full">继续阅读</span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )})}

@@ -23,6 +23,8 @@ class WikiEntry(Base):
 
     # 类型：concept（概念） 或 viewpoint（观点）
     entry_type: Mapped[str] = mapped_column(String(20), default="concept", nullable=False)
+    entry_subtype: Mapped[str] = mapped_column(String(20), default="concept", nullable=False)
+    # v4.0: concept | viewpoint | fact
 
     # 内容
     ai_definition: Mapped[str] = mapped_column(Text, nullable=True)
@@ -36,6 +38,8 @@ class WikiEntry(Base):
     # 标签 + 来源引用
     tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_quotes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # v4.0: [{"text": "原文", "context": "出自第X段"}, ...]
 
     # 知识图谱 —— 自引用，支持跨书概念关联
     parent_concept_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -20,6 +20,10 @@ class BookResponse(BaseModel):
     chapter_count: int | None
     parse_status: str
     created_at: datetime
+    # v4.0: Wiki preprocessing
+    preprocess_status: str | None = None
+    preprocess_progress: dict | None = None
+    one_liner: str | None = None
     # 阅读进度
     progress_status: str | None = None
     progress_percent: int = 0

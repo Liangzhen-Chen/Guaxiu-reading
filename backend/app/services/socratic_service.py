@@ -18,6 +18,10 @@ try:
         CHAPTER_STRUCTURE_TEMPLATE_EN, BALANCED_EXTRA_EN, DEEP_EXTRA_EN,
         SOCRATIC_BASE_EN, SOCRATIC_BALANCED_EXTRA_EN, SOCRATIC_DEEP_EXTRA_EN,
         CONCEPT_EXTRACTION_PROMPT_EN, ASSESSMENT_PROMPT_EN, COMPRESSION_PROMPT_EN,
+        P1_BOOK_PARSE, P2_CHAPTER_WIKIS,
+        P4_READING_CYCLE, P5_CHAPTER_CONFIRM,
+        P1_BOOK_PARSE_EN, P2_CHAPTER_WIKIS_EN,
+        P4_READING_CYCLE_EN, P5_CHAPTER_CONFIRM_EN,
     )
 except ImportError:
     raise ImportError(
@@ -33,6 +37,8 @@ _PROMPTS = {
         "socratic_balanced": SOCRATIC_BALANCED_EXTRA, "socratic_deep": SOCRATIC_DEEP_EXTRA,
         "extraction": CONCEPT_EXTRACTION_PROMPT, "assessment": ASSESSMENT_PROMPT,
         "compress": COMPRESSION_PROMPT,
+        "p1_parse": P1_BOOK_PARSE, "p2_wikis": P2_CHAPTER_WIKIS,
+        "p4_reading": P4_READING_CYCLE, "p5_confirm": P5_CHAPTER_CONFIRM,
     },
     "en": {
         "chapter": CHAPTER_STRUCTURE_TEMPLATE_EN, "balanced": BALANCED_EXTRA_EN,
@@ -40,6 +46,8 @@ _PROMPTS = {
         "socratic_balanced": SOCRATIC_BALANCED_EXTRA_EN, "socratic_deep": SOCRATIC_DEEP_EXTRA_EN,
         "extraction": CONCEPT_EXTRACTION_PROMPT_EN, "assessment": ASSESSMENT_PROMPT_EN,
         "compress": COMPRESSION_PROMPT_EN,
+        "p1_parse": P1_BOOK_PARSE_EN, "p2_wikis": P2_CHAPTER_WIKIS_EN,
+        "p4_reading": P4_READING_CYCLE_EN, "p5_confirm": P5_CHAPTER_CONFIRM_EN,
     },
 }
 

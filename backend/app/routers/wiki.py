@@ -20,10 +20,15 @@ async def batch_create(data: list[dict], db: AsyncSession = Depends(get_db), use
     for item in data:
         db.add(WikiEntry(
             user_id=user.id, book_id=item.get("book_id"),
-            concept_name=item["concept_name"], entry_type=item.get("entry_type","concept"),
+            concept_name=item.get("concept_name") or item.get("name"),
+            entry_type=item.get("entry_type", "concept"),
+            entry_subtype=item.get("entry_subtype") or item.get("type", "concept"),
             chapter_index=item.get("chapter_index"),
-            ai_definition=item.get("ai_definition",""), evidence=item.get("evidence"),
-            source_quote=item.get("source_quote"), tags=item.get("tags",[]),
+            ai_definition=item.get("ai_definition") or item.get("content", ""),
+            evidence=item.get("evidence"),
+            source_quote=item.get("source_quote"),
+            source_quotes=item.get("source_quotes") or item.get("quotes"),
+            tags=item.get("tags", []),
         ))
         count += 1
     await db.commit()

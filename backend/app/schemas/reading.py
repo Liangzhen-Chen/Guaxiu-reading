@@ -44,3 +44,7 @@ class ProgressResponse(BaseModel):
     progress_percent: int
     last_messages: list | None = None
     chapter_concepts: list | None = None
+    # v4.0 wiki fields
+    current_wiki_id: str | None = None
+    completed_wikis: list | None = None
+    wiki_checklist: list | None = None

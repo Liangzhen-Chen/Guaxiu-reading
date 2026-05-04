@@ -40,6 +40,9 @@ async def list_books(
             cover_url=b.cover_url, file_format=b.file_format,
             file_size_bytes=b.file_size_bytes, token_count=b.token_count,
             chapter_count=b.chapter_count, parse_status=b.parse_status,
+            preprocess_status=b.preprocess_status,
+            preprocess_progress=b.preprocess_progress,
+            one_liner=b.one_liner,
             created_at=b.created_at, progress_status=status_val,
             progress_percent=int(pct),
         ))
@@ -70,6 +73,9 @@ async def get_book(
         cover_url=book.cover_url, file_format=book.file_format,
         file_size_bytes=book.file_size_bytes, token_count=book.token_count,
         chapter_count=book.chapter_count, parse_status=book.parse_status,
+        preprocess_status=book.preprocess_status,
+        preprocess_progress=book.preprocess_progress,
+        one_liner=book.one_liner,
         created_at=book.created_at, progress_status=status_val,
         progress_percent=int(pct),
     )
@@ -121,6 +127,9 @@ async def upload_book(
         cover_url=book.cover_url, file_format=book.file_format,
         file_size_bytes=book.file_size_bytes, token_count=book.token_count,
         chapter_count=book.chapter_count, parse_status=book.parse_status,
+        preprocess_status=book.preprocess_status,
+        preprocess_progress=book.preprocess_progress,
+        one_liner=book.one_liner,
         created_at=book.created_at, progress_status="not_started", progress_percent=0,
     )
 
@@ -155,6 +164,7 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
 
             parse_error_val = None
             category = None
+            one_liner_val = None
             try:
                 from app.services.socratic_service import generate_chapter_structure
                 ch1_text = result["text"][:10000]
@@ -168,12 +178,28 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
             except Exception as fe:
                 parse_error_val = f"framework: {str(fe)[:200]}"
 
+            # P1: Generate one_liner
+            try:
+                from app.services.socratic_service import _p
+                from app.services.llm_service import chat as llm_chat
+                from app.services.json_validator import extract_json
+                p1_prompt = _p("p1_parse", "zh")
+                raw = await llm_chat(
+                    [{"role": "system", "content": p1_prompt}, {"role": "user", "content": result["text"][:30000]}],
+                    temperature=0.3, max_tokens=2048,
+                )
+                p1_data = extract_json(raw)
+                one_liner_val = p1_data.get("one_liner", "")
+            except Exception:
+                pass
+
             await db.execute(
                 update(Book).where(Book.id == book_id).values(
                     text_path=text_path,
                     token_count=result["token_count"],
                     chapter_count=result["chapter_count"],
                     category=category,
+                    one_liner=one_liner_val,
                     parse_status="done",
                     parse_error=parse_error_val,
                 )
@@ -189,10 +215,144 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
             await db.commit()
 
 
+async def _get_book_readonly(db: AsyncSession, book_id: uuid.UUID, user_id: uuid.UUID) -> Book:
+    result = await db.execute(select(Book).where(Book.id == book_id, Book.user_id == user_id))
+    book = result.scalar_one_or_none()
+    if not book:
+        raise HTTPException(status_code=404, detail="书籍不存在")
+    return book
+
+
+def _extract_chapter_text(full_text: str, chapter: int, total_chapters: int) -> str:
+    import re
+    pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
+    parts = re.split(pattern, full_text)
+    if len(parts) > 2:
+        chapters = []
+        i = 1
+        while i < len(parts):
+            chapters.append(parts[i] + (parts[i + 1] if i + 1 < len(parts) else ""))
+            i += 2
+        if chapter <= len(chapters):
+            return chapters[chapter - 1]
+    chunk_size = len(full_text) // max(total_chapters, 1)
+    start = (chapter - 1) * chunk_size
+    end = start + chunk_size if chapter < total_chapters else len(full_text)
+    return full_text[start:end]
+
+
 def _parse_sync(raw_path: str, filename: str) -> dict:
     """同步解析文档，在线程池中运行"""
     import asyncio
     return asyncio.run(parse_document(raw_path, filename))
+
+
+@router.post("/{book_id}/preprocess")
+async def start_preprocess(
+    book_id: uuid.UUID,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """触发"AI帮你读"：逐章预生成Wiki。前两章完成后标记ready。"""
+    book = await _get_book_readonly(db, book_id, user.id)
+    if book.parse_status != "done":
+        raise HTTPException(status_code=400, detail="书籍尚未解析完成")
+    if not book.text_path:
+        raise HTTPException(status_code=400, detail="书籍文本不存在")
+
+    await db.execute(
+        update(Book).where(Book.id == book_id).values(preprocess_status="processing")
+    )
+    await db.commit()
+
+    background.add_task(_preprocess_book, str(book_id), book.title, book.text_path, book.chapter_count or 1)
+
+    return {
+        "status": "started",
+        "total_chapters": book.chapter_count,
+        "message": "AI已开始逐章生成Wiki",
+    }
+
+
+@router.get("/{book_id}/preprocess/status")
+async def get_preprocess_status(
+    book_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """轮询预处理进度"""
+    book = await _get_book_readonly(db, book_id, user.id)
+    progress = book.preprocess_progress or {}
+    return {
+        "status": book.preprocess_status,
+        "total_chapters": book.chapter_count,
+        "completed_chapters": progress.get("completed_chapters", 0),
+        "ready_to_read": book.preprocess_status == "ready",
+    }
+
+
+async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapters: int):
+    """后台逐章调用 P2 生成 Wiki"""
+    import json as _json
+    from app.services.socratic_service import _p
+    from app.services.llm_service import chat
+    from app.services.json_validator import extract_json
+
+    progress = {"total_chapters": total_chapters, "completed_chapters": 0, "chapter_wikis": {}}
+    chapter_wikis = {}
+
+    async with async_session() as db:
+        try:
+            with open(text_path, "r", encoding="utf-8") as f:
+                full_text = f.read()
+
+            for ch in range(1, total_chapters + 1):
+                ch_text = _extract_chapter_text(full_text, ch, total_chapters)
+                if not ch_text.strip():
+                    continue
+
+                prompt = _p("p2_wikis", "zh")
+                prompt = prompt.replace("{book_title}", title)
+                prompt = prompt.replace("{chapter_index}", str(ch))
+
+                raw = await chat(
+                    [{"role": "system", "content": prompt}, {"role": "user", "content": ch_text[:30000]}],
+                    temperature=0.3, max_tokens=4096,
+                )
+                try:
+                    wiki_data = extract_json(raw)
+                    chapter_wikis[str(ch)] = wiki_data
+                    progress["completed_chapters"] = ch
+
+                    # Mark ready after 2 chapters
+                    if ch >= 2 and progress.get("completed_chapters", 0) >= 2:
+                        await db.execute(
+                            update(Book).where(Book.id == book_id).values(
+                                preprocess_status="ready",
+                                preprocess_progress={**progress, "chapter_wikis": chapter_wikis},
+                            )
+                        )
+                    else:
+                        await db.execute(
+                            update(Book).where(Book.id == book_id).values(
+                                preprocess_progress={**progress, "chapter_wikis": chapter_wikis},
+                            )
+                        )
+                    await db.commit()
+                except ValueError:
+                    continue  # Skip failed chapter, keep processing
+
+            # All chapters done
+            await db.execute(
+                update(Book).where(Book.id == book_id).values(
+                    preprocess_status="ready",
+                    preprocess_progress={**progress, "chapter_wikis": chapter_wikis},
+                )
+            )
+            await db.commit()
+        except Exception as e:
+            print(f"Preprocess failed for book {book_id}: {e}")
 
 
 @router.delete("/{book_id}", status_code=204)

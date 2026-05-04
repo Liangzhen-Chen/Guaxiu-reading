@@ -20,9 +20,9 @@ from app.middleware.auth import get_current_user
 from app.services.socratic_service import (
     get_socratic_prompt, build_context, extract_concepts,
     generate_assessment_question, generate_chapter_structure,
-    socratic_chat_stream
+    socratic_chat_stream, _p,
 )
-from app.services.llm_service import chat, count_tokens
+from app.services.llm_service import chat, chat_stream, count_tokens
 
 router = APIRouter(prefix="/api/reading", tags=["reading"])
 
@@ -136,19 +136,33 @@ async def reading_chat(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """导读对话 (Prompt A + B)。章节框架自动缓存，断点自动续接。"""
+    """v4.0: Wiki-based reading loop (P4)。从预生成 Wiki 清单读取，JSON 输出分发三栏。"""
     book = await _get_book(db, data.book_id, user.id)
     progress = book.progress
     if not progress or progress.status not in ("reading", "paused"):
         raise HTTPException(status_code=400, detail="请先选择阅读模式")
 
-    # 断点续接：paused 状态下恢复
     if progress.status == "paused":
         progress.status = "reading"
         await db.commit()
 
     mode = progress.mode
     chapter = max(progress.current_chapter, 1)
+    language = progress.language or "zh"
+
+    # 从预处理结果读取 Wiki 清单
+    wiki_checklist = []
+    if book.preprocess_progress:
+        ch_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {})
+        wiki_checklist = ch_wikis.get("wikis", [])
+
+    current_wiki_id = progress.current_wiki_id
+    if not current_wiki_id and wiki_checklist:
+        current_wiki_id = wiki_checklist[0].get("id", "")
+        progress.current_wiki_id = current_wiki_id
+        await db.commit()
+
+    completed_wikis = progress.completed_wikis or []
 
     # 读全书文本
     book_text = ""
@@ -157,33 +171,9 @@ async def reading_chat(
             with open(book.text_path, "r", encoding="utf-8") as f:
                 book_text = f.read()
         except FileNotFoundError:
-            raise HTTPException(status_code=400, detail="书籍文本未找到")
-
-    # 获取或生成章节框架（缓存在 progress.assessment_result 中）
-    stored = {}
-    if progress.assessment_result:
-        try:
-            stored = json.loads(progress.assessment_result)
-        except json.JSONDecodeError:
             pass
-    frameworks = stored.get("chapter_frameworks", {})
 
-    chapter_key = str(chapter)
-    if chapter_key not in frameworks:
-        chapter_text = _extract_chapter_text(book_text, chapter, book.chapter_count or 1)
-        framework = await generate_chapter_structure(
-            book_title=book.title, chapter_index=chapter,
-            chapter_text=chapter_text, mode=mode,
-            language=progress.language,
-        )
-        frameworks[chapter_key] = framework
-        stored["chapter_frameworks"] = frameworks
-        progress.assessment_result = json.dumps(stored, ensure_ascii=False)
-        await db.commit()
-
-    framework = frameworks[chapter_key]
-
-    # 获取本章对话历史（断点续接的关键）
+    # 获取对话历史
     prev = await db.execute(
         select(Conversation).where(
             Conversation.book_id == book.id,
@@ -201,25 +191,58 @@ async def reading_chat(
     await db.commit()
     history.append({"role": "user", "content": data.message})
 
-    # 流式对话
-    async def generate():
-        full_response = ""
-        async for token in socratic_chat_stream(
-            mode=mode, chapter_framework=framework, book_text=book_text,
-            conversation_history=history, user_message=data.message,
-            language=progress.language,
-        ):
-            full_response += token
-            yield token
+    # 组装 P4 prompt
+    mode_desc = (
+        "快速模式：以AI概括为主，原文为辅。追问2-3轮即可。"
+        if mode == "quick" else
+        "深度模式：以原文为主，AI解析为辅。可多轮深挖每个Wiki。"
+    )
+    profile = {}
+    if progress.assessment_result:
+        try: profile = json.loads(progress.assessment_result).get("profile", {})
+        except: pass
 
-        # 保存 AI 回应 + 处理章节切换
+    p4_prompt = _p("p4_reading", language).format(
+        book_title=book.title,
+        mode_description=mode_desc,
+        wiki_checklist=json.dumps(wiki_checklist, ensure_ascii=False),
+        current_wiki=f"{current_wiki_id}",
+        completed_wikis=json.dumps(completed_wikis, ensure_ascii=False),
+        user_profile=json.dumps(profile, ensure_ascii=False),
+        language_instruction="中文对话" if language == "zh" else "English conversation",
+    )
+
+    system_msgs = [{"role": "system", "content": f"{p4_prompt}\n\n## 全书原文\n{book_text[:50000]}"}]
+    messages = system_msgs + history
+
+    # 流式对话（先收集完整响应，解析JSON，再返回文本）
+    async def generate():
+        # Collect full response from AI
+        full_response = ""
+        async for token in chat_stream(messages, temperature=0.7, max_tokens=4096):
+            full_response += token
+
+        # Parse JSON response
+        try:
+            from app.services.json_validator import extract_json
+            parsed = extract_json(full_response)
+            ai_text = parsed.get("ai_response", full_response)
+        except Exception:
+            parsed = {"ai_response": full_response, "current_wiki": {"id": current_wiki_id, "name": ""}, "reading_material": "", "wiki_transition": False, "transition_message": ""}
+            ai_text = full_response
+
+        # Stream the display text to the user
+        yield ai_text
+        # Append wiki metadata for frontend
+        yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False)}-->"
+
         db2 = async_session()
         try:
             db2.add(Conversation(
                 book_id=book.id, chapter_index=chapter,
                 round_index=round_idx + 1, role="assistant",
                 content=full_response,
-                metadata_={"chapter": chapter, "mode": mode},
+                metadata_={"chapter": chapter, "mode": mode, "v4": True},
             ))
             progress2 = (await db2.execute(
                 select(ReadingProgress).where(ReadingProgress.book_id == book.id)
@@ -228,78 +251,27 @@ async def reading_chat(
             if progress2:
                 progress2.total_rounds = round_idx + 2
 
-                # ── 章节切换（AI 自动、用户 /next、或 10+ 轮触发）──
-                should_end = _is_chapter_end(full_response) or data.message.strip() == "/next"
-                if not should_end and len(history) >= 20:
-                    should_end = True
-                if should_end:
-                    try:
-                        # 从 DB 重新查本章全部对话，确保概念提取有足够上下文
-                        all_chapter_msgs = await db2.execute(
-                            select(Conversation).where(
-                                Conversation.book_id == book.id,
-                                Conversation.chapter_index == chapter,
-                            ).order_by(Conversation.round_index)
-                        )
-                        full_chapter_history = [
-                            {"role": m.role, "content": m.content}
-                            for m in all_chapter_msgs.scalars().all()
-                        ]
-                        full_chapter_history.append({"role": "assistant", "content": full_response})
-                        # Extract concepts from argument_tree to pass as reference
-                        ch_concepts = []
-                        try:
-                            ch_key = str(chapter)
-                            fw = json.loads(progress.assessment_result).get("chapter_frameworks", {}).get(ch_key, {})
-                            def _theses(node):
-                                items = []
-                                if isinstance(node, dict):
-                                    if node.get("thesis"): items.append(node["thesis"])
-                                    for b in node.get("branches", []): items.extend(_theses(b))
-                                return items
-                            ch_concepts = _theses(fw.get("argument_tree", {}))
-                        except: pass
-                        concepts_data = await extract_concepts(
-                            chapter,
-                            full_chapter_history,
-                            language=progress.language,
-                            chapter_concepts=ch_concepts,
-                        )
-                        count = 0
-                        for c in concepts_data.get("concepts", []):
-                            db2.add(WikiEntry(
-                                user_id=user.id, book_id=book.id,
-                                concept_name=c["name"], entry_type="concept",
-                                chapter_index=chapter,
-                                ai_definition=c.get("definition", ""),
-                                evidence=c.get("evidence", []),
-                                source_quote=c.get("source_quote"),
-                                tags=c.get("tags", []),
-                            ))
-                            count += 1
-                        for v in concepts_data.get("viewpoints", []):
-                            db2.add(WikiEntry(
-                                user_id=user.id, book_id=book.id,
-                                concept_name=v["statement"][:300], entry_type="viewpoint",
-                                chapter_index=chapter,
-                                ai_definition=v.get("statement", ""),
-                                evidence=v.get("evidence", []),
-                                tags=v.get("tags", []),
-                            ))
-                            count += 1
+                # Update wiki state
+                if parsed.get("current_wiki", {}).get("id"):
+                    new_wiki_id = parsed["current_wiki"]["id"]
+                    if new_wiki_id != progress2.current_wiki_id:
+                        # Wiki changed: mark old as done
+                        if progress2.current_wiki_id:
+                            done = list(progress2.completed_wikis or [])
+                            if progress2.current_wiki_id not in done:
+                                done.append(progress2.current_wiki_id)
+                            progress2.completed_wikis = done
+                        progress2.current_wiki_id = new_wiki_id
 
-                        # 将提取结果作为特殊标记传给前端，让用户选择导入
-                        yield f"\n\n<!--WIKI_SELECTION:{json.dumps(concepts_data, ensure_ascii=False)}-->"
-                        total = book.chapter_count or 1
-                        if chapter >= total:
-                            progress2.status = "completed"
-                            yield f"\n\n[全书导读完成！请在上方选择要导入 Wiki 的概念。]"
-                        else:
-                            progress2.current_chapter = chapter + 1
-                            progress2.status = "paused"
-                            yield f"\n\n[第{chapter}章完成。请在上方选择要导入 Wiki 的概念。输入任意内容进入第{chapter + 1}章。]"
-                    except Exception as e:
-                        yield f"\n\n[概念提取出错: {e}]"
+                # Chapter end check
+                if data.message.strip() == "/next" or _is_chapter_end(full_response) or len(history) >= 20:
+                    yield "\n\n[CHAPTER_END]"
+                    total = book.chapter_count or 1
+                    if chapter >= total:
+                        progress2.status = "completed"
+                    else:
+                        progress2.current_chapter = chapter + 1
+                        progress2.status = "paused"
 
             await db2.commit()
         finally:
@@ -411,7 +383,23 @@ async def resume_reading(
 
     resp = _to_progress_response(book, progress)
 
+    # v4.0: Wiki state
+    resp.current_wiki_id = progress.current_wiki_id
+    resp.completed_wikis = progress.completed_wikis or []
+
+    # Build wiki checklist for left column
     chapter = max(progress.current_chapter, 1)
+    wiki_checklist = []
+    if book.preprocess_progress:
+        ch_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {})
+        for w in ch_wikis.get("wikis", []):
+            wiki_id = w.get("id", "")
+            status = "active" if wiki_id == progress.current_wiki_id else (
+                "done" if wiki_id in (progress.completed_wikis or []) else "pending"
+            )
+            wiki_checklist.append({"id": wiki_id, "name": w.get("name", ""), "status": status})
+    resp.wiki_checklist = wiki_checklist
+
     # 加载最近对话
     prev = await db.execute(
         select(Conversation).where(
@@ -438,6 +426,47 @@ async def resume_reading(
                 resp.chapter_concepts = _theses2(framework.get("argument_tree", {}))
         except: pass
     return resp
+
+
+@router.post("/chapter-end")
+async def chapter_end(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """v4.0: 章末Wiki确认。将本章对话+原始Wiki发给AI做最终调整。"""
+    book_id = data.get("book_id")
+    chapter = data.get("chapter_index", 1)
+    book = await _get_book(db, book_id, user.id)
+
+    # 获取原始Wiki
+    orig_wikis = []
+    if book.preprocess_progress:
+        orig_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {}).get("wikis", [])
+
+    # 获取本章对话
+    prev = await db.execute(
+        select(Conversation).where(
+            Conversation.book_id == book.id,
+            Conversation.chapter_index == chapter,
+        ).order_by(Conversation.round_index)
+    )
+    conv = [{"role": m.role, "content": m.content} for m in prev.scalars().all()]
+
+    # 调用P5
+    from app.services.llm_service import chat as chat_nonstream
+    from app.services.json_validator import extract_json
+    p5_prompt = _p("p5_confirm", "zh").format(
+        chapter_index=chapter,
+        original_wikis=json.dumps(orig_wikis, ensure_ascii=False),
+        conversation_context=json.dumps(conv, ensure_ascii=False),
+    )
+    raw = await chat_nonstream([{"role": "user", "content": p5_prompt}], temperature=0.3, max_tokens=4096)
+    try:
+        result = extract_json(raw)
+        return {"wikis": result.get("wikis", [])}
+    except Exception:
+        return {"wikis": orig_wikis}  # fallback to original
 
 
 # ── helpers ──

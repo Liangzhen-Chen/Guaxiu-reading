@@ -2,6 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import String, Integer, DateTime, ForeignKey, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.database import Base
@@ -27,6 +28,10 @@ class ReadingProgress(Base):
     assessment_result: Mapped[dict | None] = mapped_column(
         String(2000), nullable=True
     )  # JSON string
+
+    # v4.0: Wiki-based reading
+    current_wiki_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    completed_wikis: Mapped[list | None] = mapped_column(JSONB, default=list)
 
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
