@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-import { API } from "../config";
+import { API, UPLOAD_API } from "../config";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 
 export default function BooksPage() {
@@ -56,7 +56,7 @@ export default function BooksPage() {
     const f = e.target.files?.[0]; if (!f) return;
     setUpStatus("uploading"); setUpProgress(0);
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", API + "/api/books/upload");
+    xhr.open("POST", UPLOAD_API + "/api/books/upload");
     xhr.setRequestHeader("Authorization", "Bearer " + T());
     xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
     xhr.onload = async () => {
