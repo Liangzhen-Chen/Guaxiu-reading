@@ -101,8 +101,9 @@ async def assessment(
     except (json.JSONDecodeError, TypeError):
         assessment_complete = round_idx >= 2
 
-    if assessment_complete and book.progress and book.progress.status != "reading":
-        book.progress.status = "reading"
+    if assessment_complete and book.progress:
+        if book.progress.status != "reading":
+            book.progress.status = "reading"
         if book.progress.current_chapter == 0:
             book.progress.current_chapter = 1
         # Eagerly generate chapter 1 framework so /resume has concepts
@@ -217,11 +218,22 @@ async def reading_chat(
         return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
 
     # 组装 P4 prompt
-    mode_desc = (
-        "快速模式：以AI概括为主，原文为辅。追问2-3轮即可。"
-        if mode == "quick" else
-        "深度模式：以原文为主，AI解析为辅。可多轮深挖每个Wiki。"
-    )
+    if mode == "quick":
+        mode_desc = "快速模式"
+        mode_sop = """## 快速模式 SOP
+1. **进入新 Wiki 时**：reading_material 放 AI 对该 wiki 的概括总结，ai_response 提出 1-2 个苏格拉底式追问引导用户思考
+2. **用户回答后**：判定理解程度。若准确则追问 1 个不同角度的问题；若基本准确则确认后 wiki_transition=true；若有偏差则换个方式再追问一次
+3. **每连续完成 4-5 个 wiki**：在 ai_response 中顺带问一句"前面这些有什么问题吗"，但不要停下
+4. **禁止**：主动问用户"要不要继续"、"想先了解哪个"、"给你几个选项"——所有过渡由你判定"""
+    else:
+        mode_desc = "深度模式"
+        mode_sop = """## 深度模式 SOP
+1. **进入新 Wiki 时**：不直接给出总结。reading_material 放相关原文段落（从 wiki 的 quotes 中选取），ai_response 提出引导性问题让用户自己从原文中提炼理解（如"你觉得这段话的核心观点是什么？"）
+2. **用户初次回答后**：不立即评判对错。换一段原文或换个角度，再问 1-2 次，引导用户深化理解（2-3 轮原文引导）
+3. **用户理解后**：进入苏格拉底追问阶段（2-3 轮），从不同场景/角度验证理解
+4. **判定理解后 wiki_transition=true**
+5. **禁止**：主动问用户"要不要继续"、给选项——所有过渡由你判定"""
+
     profile = {}
     if progress.assessment_result:
         try: profile = json.loads(progress.assessment_result).get("profile", {})
@@ -230,6 +242,7 @@ async def reading_chat(
     p4_prompt = _p("p4_reading", language).format(
         book_title=book.title,
         mode_description=mode_desc,
+        mode_sop=mode_sop,
         wiki_checklist=json.dumps(wiki_checklist, ensure_ascii=False),
         current_wiki=f"{current_wiki_id}",
         completed_wikis=json.dumps(completed_wikis, ensure_ascii=False),
@@ -266,7 +279,7 @@ async def reading_chat(
             db2.add(Conversation(
                 book_id=book.id, chapter_index=chapter,
                 round_index=round_idx + 1, role="assistant",
-                content=full_response,
+                content=ai_text + f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))}-->",
                 metadata_={"chapter": chapter, "mode": mode, "v4": True},
             ))
             progress2 = (await db2.execute(
@@ -288,8 +301,8 @@ async def reading_chat(
                             progress2.completed_wikis = done
                         progress2.current_wiki_id = new_wiki_id
 
-                # Chapter end check
-                if data.message.strip() == "/next" or _is_chapter_end(full_response) or len(history) >= 20:
+                # Chapter end: only on explicit /next command
+                if data.message.strip() == "/next":
                     yield "\n\n[CHAPTER_END]"
                     total = book.chapter_count or 1
                     if chapter >= total:
@@ -416,7 +429,9 @@ async def resume_reading(
     resp.completed_wikis = progress.completed_wikis or []
 
     # Build wiki checklist for left column
-    chapter = max(progress.current_chapter, 1)
+    if progress.current_chapter <= 0:
+        progress.current_chapter = 1  # fix stale chapter from old assessment bug
+    chapter = progress.current_chapter
     resp.wiki_checklist = _build_wiki_checklist(book, chapter, progress)
 
     # 加载最近对话（仅当前章节，不含评估对话）
@@ -426,10 +441,22 @@ async def resume_reading(
             Conversation.chapter_index == chapter,
         ).order_by(Conversation.round_index)
     )
-    resp.last_messages = [
-        {"role": m.role, "content": m.content, "round": m.round_index}
-        for m in prev.scalars().all()
-    ]
+    import re as _re2
+    clean_messages = []
+    last_material = ""
+    for m in prev.scalars().all():
+        content = m.content or ""
+        # Strip V4_META marker, extract reading_material if present
+        meta_match = _re2.search(r'<!--V4_META:([\s\S]*?)-->', content)
+        if meta_match:
+            try:
+                parsed = json.loads(meta_match.group(1))
+                last_material = parsed.get("reading_material", "")
+            except: pass
+            content = _re2.sub(r'<!--V4_META:[\s\S]*?-->', '', content).strip()
+        clean_messages.append({"role": m.role, "content": content, "round": m.round_index})
+    resp.last_messages = clean_messages
+    resp.reading_material = last_material  # restore center column content
 
     # For not_started books, try to get concepts from parsed framework
     if not progress or progress.status == "not_started":

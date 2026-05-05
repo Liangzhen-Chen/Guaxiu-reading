@@ -55,22 +55,21 @@ export default function ReadPage() {
   }, [status, concepts.length]);
 
   // Auto-trigger first message when status transitions — ensures closure has correct status
+  const [showStartButton, setShowStartButton] = useState(false);  // "开始阅读" / "开始本章" button
   const assessmentTriggered = useRef(false);
-  const readingTriggered = useRef(false);
   useEffect(() => {
     if (status === "assessment" && !assessmentTriggered.current) {
       assessmentTriggered.current = true;
       setTimeout(() => sendMsg(L()==="zh"?"开始评估":"Start assessment", true), 400);
     }
-    if (status === "reading" && !readingTriggered.current && started.current) {
-      readingTriggered.current = true;
-      readingFirstMsg.current = true;
-      setTimeout(() => sendMsg(L()==="zh"?"请介绍本章要点":"Introduce this chapter", true), 400);
-    }
-    // Reset triggers when leaving those states (for chapter transitions)
     if (status !== "assessment") assessmentTriggered.current = false;
-    if (status !== "reading") readingTriggered.current = false;
-  }, [status, started.current]);
+  }, [status]);
+
+  function handleStartReading() {
+    setShowStartButton(false);
+    readingFirstMsg.current = true;
+    sendMsg(L()==="zh"?"请介绍本章要点":"Introduce this chapter", true);
+  }
 
   async function loadChapterText(ch: number) {
     for (let i = 0; i < 3; i++) {
@@ -86,13 +85,24 @@ export default function ReadPage() {
     setMode(d.mode); setChapter(d.current_chapter||1); setTotal(d.total_chapters||0);
     if (d.wiki_checklist?.length) { setWikiChecklist(d.wiki_checklist); }
     if (d.current_wiki_id) { setCurrentWikiId(d.current_wiki_id); }
+    if (d.reading_material) { setReadingMaterial(d.reading_material); }
     if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
-    if (d.last_messages?.length) setMessages(d.last_messages.map((m:any)=>({role:m.role,content:m.content})));
+    const hasMessages = d.last_messages?.length > 0;
+    if (hasMessages) {
+      setMessages(d.last_messages.map((m:any)=>({role:m.role,content:m.content})));
+      readingTriggered.current = true;  // resume: don't auto-trigger
+    }
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
-    if (d.current_chapter > 0) loadChapterText(d.current_chapter);
+    if (d.current_chapter > 0) {
+      loadChapterText(d.current_chapter);
+      setChapterTitle(`第 ${d.current_chapter} 章`);
+    }
     if (s === "reading" && !started.current) started.current = true;
-    // Auto-trigger handled by useEffect watching status changes
+    // Show start button for fresh reading entry or chapter transitions (paused→reading)
+    if (s === "reading" && (!hasMessages || messages.length === 0)) {
+      setShowStartButton(true);
+    }
   }
 
   async function selectMode(m: string) {
@@ -117,6 +127,8 @@ export default function ReadPage() {
         setAssessmentQ(null);
         setStatus("reading");
         loadChapterText(1);
+        if (!started.current) started.current = true;
+        setShowStartButton(true);
         if (!started.current) { started.current = true; }
       } else {
         try {
@@ -167,6 +179,19 @@ export default function ReadPage() {
           setMessages([]);
           setChapterTitle("");
           setStreaming(false);
+          setShowStartButton(true);  // show button for new chapter
+          // Fetch chapter-end wiki list and show import modal
+          try {
+            const wRes = await fetch(`${API}/api/reading/chapter-end`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
+              body: JSON.stringify({ book_id, chapter_index: chapter }),
+            });
+            if (wRes.ok) {
+              const wData = await wRes.json();
+              if (wData.wikis?.length) { setWikiSelection({ wikis: wData.wikis }); }
+            }
+          } catch {}
           loadState();
           return;
         }
@@ -264,7 +289,9 @@ export default function ReadPage() {
                 }`}>
                 {w.status === "done" ? "✓ " : w.id === currentWikiId || w.status === "active" ? "● " : "○ "}{w.name}
               </div>
-            )) : <div className="text-xs text-stone-400">{status==="reading"?"Wiki 加载中…":"开始导读后显示"}</div>}
+            )) : <div className="text-xs text-stone-400">
+              {status==="reading" ? "暂无 Wiki，请先在书架点击\"AI帮你读\"" : "开始导读后显示"}
+            </div>}
             <button onClick={()=>sendMsg("/next")} className="mt-3 w-full text-xs py-1 rounded border border-stone-200 text-stone-400 hover:bg-stone-50">跳过本章 →</button>
           </div>
         </div>
@@ -321,6 +348,14 @@ export default function ReadPage() {
                 ))}
                 <div ref={bottomRef}/>
               </div>
+              {showStartButton && (
+                <div className="flex justify-center p-3 border-t border-stone-100 bg-amber-50">
+                  <button onClick={handleStartReading} disabled={streaming}
+                    className="cursor-pointer rounded-xl px-8 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black transition-colors">
+                    {L()==="zh"?"开始阅读本章":"Start Reading"}
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2 p-3 border-t border-stone-100">
                 <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendMsg()}
                   placeholder={L()==="zh"?"写下你的理解…":"Write your understanding…"}

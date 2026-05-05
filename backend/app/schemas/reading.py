@@ -48,3 +48,4 @@ class ProgressResponse(BaseModel):
     current_wiki_id: str | None = None
     completed_wikis: list | None = None
     wiki_checklist: list | None = None
+    reading_material: str | None = None  # restored from last conversation
