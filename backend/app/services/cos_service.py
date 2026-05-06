@@ -12,6 +12,18 @@ def _get_client():
         SecretId=os.environ["COS_SECRET_ID"],
         SecretKey=os.environ["COS_SECRET_KEY"],
         Scheme="https",
+        UseAccelerate=True,  # 全球加速域名
+    )
+    return CosS3Client(config)
+
+
+def _get_client_internal():
+    """内网下载用，不走加速（E2E延迟低）"""
+    config = CosConfig(
+        Region=os.environ["COS_REGION"],
+        SecretId=os.environ["COS_SECRET_ID"],
+        SecretKey=os.environ["COS_SECRET_KEY"],
+        Scheme="https",
     )
     return CosS3Client(config)
 
@@ -33,9 +45,13 @@ def get_presigned_upload(user_id: str, filename: str, file_type: str) -> dict:
         Headers={"Content-Type": "application/octet-stream"},
     )
 
-    # 公开访问 URL（后端后续用 SDK 下载，不需要公开）
+    # 替换为全球加速域名
+    base = f"{bucket}.cos.{os.environ['COS_REGION']}.myqcloud.com"
+    accel = f"{bucket}.cos.accelerate.myqcloud.com"
+    upload_url = url.replace(base, accel)
+
     return {
-        "upload_url": url,
+        "upload_url": upload_url,
         "key": key,
         "bucket": bucket,
         "expires_in": 1800,
@@ -43,8 +59,8 @@ def get_presigned_upload(user_id: str, filename: str, file_type: str) -> dict:
 
 
 def download_from_cos(key: str, local_path: str) -> bool:
-    """从COS下载文件到本地"""
-    client = _get_client()
+    """从COS下载文件到本地（内网不走加速）"""
+    client = _get_client_internal()
     bucket = os.environ["COS_BUCKET"]
     try:
         resp = client.get_object(Bucket=bucket, Key=key)
