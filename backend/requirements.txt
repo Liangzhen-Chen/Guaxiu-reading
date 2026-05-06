@@ -14,3 +14,4 @@ paddleocr>=3.5.0
 paddlepaddle>=3.0.0
 pymupdf==1.25.*
 ebooklib==0.18.*
+cos-python-sdk-v5>=1.9.0

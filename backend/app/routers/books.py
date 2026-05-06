@@ -136,6 +136,84 @@ async def upload_book(
     )
 
 
+@router.post("/presign", status_code=200)
+async def presign_upload(
+    data: dict,
+    user: User = Depends(get_current_user),
+):
+    """获取COS预签名上传URL，前端直传COS"""
+    from app.services.cos_service import get_presigned_upload
+    try:
+        result = get_presigned_upload(
+            user_id=str(user.id),
+            filename=data.get("filename", "book.epub"),
+            file_type=data.get("file_type", "epub"),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"COS 上传配置失败: {str(e)}")
+
+
+@router.post("/import-cos", response_model=BookResponse, status_code=201)
+async def import_from_cos(
+    background: BackgroundTasks,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """从COS导入书籍：下载→创建记录→后台解析"""
+    from app.services.cos_service import download_from_cos
+    key = data.get("key", "")
+    filename = data.get("filename", "")
+    if not key:
+        raise HTTPException(status_code=400, detail="缺少COS key")
+
+    ext = os.path.splitext(filename or "")[1].lower()
+    if ext not in (".epub", ".pdf", ".txt"):
+        ext = ".epub" if "epub" in (filename or "").lower() else ".pdf" if "pdf" in (filename or "").lower() else ".txt"
+
+    book_id = uuid.uuid4()
+    book_dir = os.path.join(settings.book_storage_path, str(book_id))
+    os.makedirs(book_dir, exist_ok=True)
+    local_path = os.path.join(book_dir, f"original{ext}")
+
+    # 从COS下载到本地
+    if not download_from_cos(key, local_path):
+        raise HTTPException(status_code=500, detail="COS 下载失败，请重试")
+
+    file_size = os.path.getsize(local_path)
+    if file_size > settings.max_upload_size_mb * 1024 * 1024:
+        os.remove(local_path)
+        raise HTTPException(status_code=400, detail=f"文件不能超过 {settings.max_upload_size_mb}MB")
+
+    book = Book(
+        id=book_id, user_id=user.id,
+        title=data.get("title") or os.path.splitext(filename or "未命名")[0],
+        author=data.get("author") or None,
+        original_filename=filename or "",
+        file_format=ext.lstrip("."),
+        file_path=local_path,
+        file_size_bytes=file_size,
+        parse_status="pending",
+    )
+    db.add(book)
+    await db.commit()
+    await db.refresh(book)
+
+    background.add_task(_parse_in_background, str(book_id), local_path, filename or "", book.title)
+
+    return BookResponse(
+        id=book.id, title=book.title, author=book.author, category=book.category,
+        cover_url=book.cover_url, file_format=book.file_format,
+        file_size_bytes=book.file_size_bytes, token_count=book.token_count,
+        chapter_count=book.chapter_count, parse_status=book.parse_status,
+        preprocess_status=book.preprocess_status,
+        preprocess_progress=book.preprocess_progress,
+        one_liner=book.one_liner,
+        created_at=book.created_at, progress_status="not_started", progress_percent=0,
+    )
+
+
 async def _parse_in_background(book_id: str, raw_path: str, filename: str, title: str):
     """后台解析文档 + 生成章节框架。CPU 密集部分在线程池运行，不阻塞事件循环。"""
     import json as _json
