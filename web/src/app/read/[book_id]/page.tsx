@@ -257,7 +257,7 @@ export default function ReadPage() {
         }
         if (full.includes("[CHAPTER_END]")) {
           setReadingMaterial("");
-          setMessages([]);
+          setMessages([{ role: "assistant", content: L()==="zh"?"🎉 本章完成！你已掌握本章概念。":"🎉 Chapter complete! You've mastered the concepts." }]);
           setChapterTitle("");
           setStreaming(false);
           setShowStartButton(true);  // show button for new chapter
@@ -286,6 +286,14 @@ export default function ReadPage() {
 
   async function batchSave(selected: any[]) {
     await fetch(`${API}/api/wiki/batch`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify(selected) });
+    localStorage.setItem("wiki_recent_count", String(selected.length));
+    localStorage.setItem("wiki_recent_time", Date.now().toString());
+    // Track weekly wiki additions for the growth summary
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekKey = `wiki_week_${weekStart.toISOString().split("T")[0]}`;
+    const prevWeek = parseInt(localStorage.getItem(weekKey) || "0", 10);
+    localStorage.setItem(weekKey, String(prevWeek + selected.length));
     setWikiSelection(null); loadState();
   }
 
@@ -358,7 +366,7 @@ export default function ReadPage() {
         <div className="flex items-center gap-3">
           <span className="font-display font-bold text-xl">{chapterTitle || (L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`)}</span>
           {total > 0 && <span className="text-stone-400">/ {total}</span>}
-          <div className="h-1.5 w-32 rounded-full bg-stone-100 hidden sm:block"><div className="h-1.5 rounded-full bg-stone-800 transition-all" style={{width:`${progress}%`}}/></div>
+          <div className="h-2.5 w-32 rounded-full bg-stone-100 hidden sm:block"><div className="h-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all" style={{width:`${progress}%`}}/></div>
         </div>
         <div className="flex gap-3 text-xs text-stone-400">
           <button onClick={()=>router.push(`/read/${book_id}/toc`)} className="hover:text-stone-800">{L()==="zh"?"目录":"TOC"}</button>
@@ -370,7 +378,12 @@ export default function ReadPage() {
         {/* LEFT: Wiki Checklist */}
         <div className="w-48 shrink-0 hidden lg:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-3 max-h-[70vh] overflow-y-auto">
-            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{L()==="zh"?"本章 Wiki":"Chapter Wiki"}</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs font-semibold text-stone-400 uppercase tracking-wide">{L()==="zh"?"本章 Wiki":"Chapter Wiki"}</div>
+              {wikiChecklist.length > 0 && (
+                <div className="text-[10px] text-stone-400">{wikiChecklist.filter((w:any) => w.status === "done").length}/{wikiChecklist.length} {L()==="zh"?"已掌握":"done"}</div>
+              )}
+            </div>
             {wikiChecklist.length > 0 ? wikiChecklist.map((w: any) => (
               <div key={w.id}
                 className={`text-xs px-2 py-1 rounded mb-0.5 ${
@@ -435,13 +448,24 @@ export default function ReadPage() {
           ) : (
             <div className="rounded-2xl border border-stone-200 bg-white overflow-hidden">
               <div className="p-3 space-y-3 max-h-[55vh] overflow-y-auto">
-                {chatMsgs.map((m,i)=>(
+                {(() => { let aiCount = 0; return chatMsgs.map((m,i) => {
+                  const isAi = m.role === "assistant";
+                  if (isAi) aiCount++;
+                  const showFeedback = isAi && aiCount % 3 === 0;
+                  return (
                   <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
                       {m.role==="assistant" ? <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={sanitizedMD(m.content)} /> : <span className="whitespace-pre-wrap">{m.content}</span>}
                     </div>
+                    {showFeedback && (
+                      <div className="flex items-center gap-1 ml-2 self-end pb-2">
+                        <span className="text-xs text-stone-200">|</span>
+                        <button onClick={() => {}} className="text-stone-300 hover:text-amber-500 transition-colors text-xs cursor-pointer">👍</button>
+                        <button onClick={() => {}} className="text-stone-300 hover:text-amber-500 transition-colors text-xs cursor-pointer">👎</button>
+                      </div>
+                    )}
                   </div>
-                ))}
+                )}); })()}
                 <div ref={bottomRef}/>
               </div>
               {showStartButton && (
@@ -467,7 +491,7 @@ export default function ReadPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="bg-white rounded-2xl p-6 w-[480px] max-h-[75vh] overflow-y-auto shadow-2xl">
             <div className="mb-5">
-              <h3 className="font-bold text-xl text-stone-800 mb-1">{L()==="zh"?"本章概念沉淀":"Chapter Concepts"}</h3>
+              <h3 className="font-bold text-xl text-stone-800 mb-1">{L()==="zh"?`本章 ${(wikiSelection.wikis?.length||0)+(wikiSelection.concepts?.length||0)} 个概念已沉淀`:`${(wikiSelection.wikis?.length||0)+(wikiSelection.concepts?.length||0)} Concepts Merged`}</h3>
               <p className="text-sm text-stone-400">{L()==="zh"?"勾选要导入 Wiki 的概念，未勾选的会被丢弃":"Check concepts to import into your Wiki. Unchecked will be discarded."}</p>
             </div>
             <div className="space-y-1.5">

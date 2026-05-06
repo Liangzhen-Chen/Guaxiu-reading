@@ -105,6 +105,8 @@ async def upload_book(
     content = await file.read()
     if len(content) > settings.max_upload_size_mb * 1024 * 1024:
         raise HTTPException(status_code=400, detail=f"文件不能超过 {settings.max_upload_size_mb}MB")
+    if not _validate_magic_bytes(content, ext):
+        raise HTTPException(status_code=400, detail=f"文件格式校验失败：扩展名 {ext} 与实际文件内容不匹配")
     with open(raw_path, "wb") as f:
         f.write(content)
 
@@ -191,6 +193,12 @@ async def import_from_cos(
     if file_size > settings.max_upload_size_mb * 1024 * 1024:
         os.remove(local_path)
         raise HTTPException(status_code=400, detail=f"文件不能超过 {settings.max_upload_size_mb}MB")
+
+    with open(local_path, "rb") as _f:
+        file_header = _f.read(4)
+    if not _validate_magic_bytes(file_header, ext):
+        os.remove(local_path)
+        raise HTTPException(status_code=400, detail=f"文件格式校验失败：扩展名 {ext} 与实际文件内容不匹配")
 
     book = Book(
         id=book_id, user_id=user.id,
@@ -361,32 +369,18 @@ async def _get_book_readonly(db: AsyncSession, book_id: uuid.UUID, user_id: uuid
 from app.routers.reading import _extract_chapter_text, _get_chapter_markers
 
 
-async def _fetch_google_toc(title: str, author: str) -> str:
-    """尝试从 Google Books API 获取目录信息"""
-    import urllib.request
-    import urllib.parse
-    import json as _json
-    try:
-        query = f'intitle:"{title}"'
-        if author:
-            query += f'+inauthor:"{author}"'
-        url = f"https://www.googleapis.com/books/v1/volumes?q={urllib.parse.quote(query)}&maxResults=3"
-        req = urllib.request.Request(url, headers={"User-Agent": "Xiugua/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = _json.loads(resp.read())
-        items = data.get("items", [])
-        if not items:
-            return "（Google Books 未找到此书）"
-        # Find best match with TOC
-        for item in items:
-            info = item.get("volumeInfo", {})
-            toc = info.get("tableOfContents", "")
-            if toc:
-                book_title = info.get("title", "")
-                return f"Google Books 找到《{book_title}》，目录如下：\n{toc[:3000]}"
-        return "（Google Books 找到此书但无目录信息）"
-    except Exception as e:
-        return f"（Google Books API 查询失败: {str(e)[:100]}）"
+_MAGIC_BYTES = {
+    ".pdf": (b"%PDF", 4),
+    ".epub": (b"PK\x03\x04", 4),
+}
+
+
+def _validate_magic_bytes(content: bytes, ext: str) -> bool:
+    """Validate file header matches expected magic bytes for the extension."""
+    if ext in _MAGIC_BYTES:
+        expected, length = _MAGIC_BYTES[ext]
+        return content[:length] == expected
+    return True  # txt: no magic byte validation
 
 
 def _parse_sync(raw_path: str, filename: str) -> dict:
@@ -405,6 +399,8 @@ async def start_preprocess(
     book = await _get_book_readonly(db, book_id, user.id)
     if book.parse_status != "done":
         raise HTTPException(status_code=400, detail="书籍尚未解析完成")
+    if book.preprocess_status == "processing":
+        raise HTTPException(status_code=400, detail="预处理进行中")
     if not book.text_path:
         raise HTTPException(status_code=400, detail="书籍文本不存在")
 

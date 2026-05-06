@@ -41,6 +41,8 @@ async def search_entries(
     db: AsyncSession, user_id: str, query: str, limit: int = 20
 ) -> list[WikiEntry]:
     """全文搜索 Wiki 条目"""
+    if not query or not query.strip():
+        return []
     result = await db.execute(
         select(WikiEntry)
         .where(

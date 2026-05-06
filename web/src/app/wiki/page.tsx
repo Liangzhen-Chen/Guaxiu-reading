@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { track } from "../track";
+import { showToast } from "../toast";
 
 import { API } from "../config";
 function getToken() { if (typeof window === "undefined") return ""; return localStorage.getItem("token") || ""; }
@@ -18,16 +19,40 @@ export default function WikiPage() {
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [weekAddition, setWeekAddition] = useState(0);
   const token = getToken();
 
+  useEffect(() => {
+    const recentCount = localStorage.getItem("wiki_recent_count");
+    const recentTime = localStorage.getItem("wiki_recent_time");
+    if (recentCount && recentTime) {
+      const elapsed = Date.now() - parseInt(recentTime);
+      if (elapsed < 60000) {
+        showToast(`${recentCount} 个新概念已加入知识库`, "success");
+      }
+      localStorage.removeItem("wiki_recent_count");
+      localStorage.removeItem("wiki_recent_time");
+    }
+  }, []);
+
   useEffect(() => { track("page_view"); if (token) { load(); } else { setIsLoading(false); } }, []);
+
+  useEffect(() => {
+    // Calculate weekly addition from localStorage
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weekKey = `wiki_week_${weekStart.toISOString().split("T")[0]}`;
+    const wc = parseInt(localStorage.getItem(weekKey) || "0", 10);
+    setWeekAddition(wc);
+  }, [entries]);
 
   async function load(q?: string) {
     setError("");
     setIsLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("search", q);
-    params.set("limit", "20");
+    params.set("limit", "9999");
     const thisReq = ++reqId;
     try {
       const res = await fetch(API + "/api/wiki?" + params.toString(), {
@@ -36,7 +61,11 @@ export default function WikiPage() {
       });
       if (thisReq !== reqId) return; // discard stale results
       if (res.status === 401) { localStorage.removeItem("token"); window.location.href = "/login"; return; }
-      if (res.ok) setEntries(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        setEntries(data);
+        setTotalCount(data.length);
+      }
       else setError("加载失败，请稍后重试");
     } catch {
       if (thisReq === reqId) setError("网络连接失败，请检查网络");
@@ -49,7 +78,7 @@ export default function WikiPage() {
 
   return (
     <div>
-      <h1 className="font-chinese text-2xl font-bold mb-6" style={{ color: "#8B6914" }}>Wiki</h1>
+      <h1 className="font-chinese text-2xl font-bold mb-6" style={{ color: "#8B6914" }}>知识库 · {totalCount} 个概念{weekAddition > 0 ? ` · 本周+${weekAddition}` : ""}</h1>
       <div className="flex gap-3 mb-6">
         <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && load(search)}
           placeholder="搜索概念…" className="flex-1 rounded-lg px-4 py-3 text-sm bg-white border border-stone-200" />

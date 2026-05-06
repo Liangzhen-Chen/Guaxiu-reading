@@ -16,6 +16,27 @@ export default function BooksPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter(); const { lang } = useLang();
 
+  // Reading streak
+  const [streakCount, setStreakCount] = useState(0);
+  useEffect(() => {
+    const today = new Date().toISOString().split("T")[0];
+    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+    const lastRead = localStorage.getItem("last_read_date");
+    let count = parseInt(localStorage.getItem("reading_streak") || "0", 10);
+    if (lastRead === today) {
+      setStreakCount(count);
+    } else if (lastRead === yesterday) {
+      count += 1;
+      localStorage.setItem("reading_streak", String(count));
+      localStorage.setItem("last_read_date", today);
+      setStreakCount(count);
+    } else {
+      localStorage.setItem("reading_streak", "1");
+      localStorage.setItem("last_read_date", today);
+      setStreakCount(1);
+    }
+  }, []);
+
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
   // Bug B1 fix: compute needsPoll as a derived value via useMemo
   const needsPoll = useMemo(() => {
@@ -175,6 +196,13 @@ export default function BooksPage() {
           <input type="file" accept=".epub,.pdf,.txt" className="hidden" onChange={doUp} disabled={upStatus === "uploading"} />
         </label>
       </div>
+
+      {streakCount > 0 && (
+        <div className="flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium w-fit">
+          <span>🔥</span>
+          <span>{lang === "zh" ? `连续阅读 ${streakCount} 天` : `Reading streak: ${streakCount} days`}</span>
+        </div>
+      )}
 
       {upStatus === "uploading" && (
         <div className="mb-6 bg-white rounded-xl p-4 border border-stone-200">

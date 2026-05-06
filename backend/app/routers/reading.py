@@ -4,7 +4,7 @@ import httpx
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -61,6 +61,16 @@ async def assessment(
     """背景评估对话 (Prompt D)，3-5 轮后自动输出用户画像并进入 reading 状态"""
     book = await _get_book(db, data.book_id, user.id)
 
+    # D2: Reset assessment conversation when starting a new assessment
+    if book.progress and book.progress.assessment_result:
+        book.progress.assessment_result = None
+        await db.execute(
+            delete(Conversation).where(
+                Conversation.book_id == book.id,
+                Conversation.chapter_index == ASSESSMENT_CHAPTER,
+            )
+        )
+
     prev = await db.execute(
         select(Conversation).where(
             Conversation.book_id == book.id,
@@ -92,7 +102,6 @@ async def assessment(
         result = json.loads(ai_response)
         if result.get("assessment_complete"):
             assessment_complete = True
-            progress = book.progress
             if progress:
                 progress.status = "reading"
                 progress.assessment_result = json.dumps(
@@ -184,6 +193,10 @@ async def reading_chat(
     )
     history = [{"role": m.role, "content": m.content} for m in prev.scalars().all()]
 
+    # Limit to last 30 rounds (60 messages) to avoid context overload
+    if len(history) > 60:
+        history = history[-60:]
+
     # 保存用户消息
     round_idx = len([m for m in history if m["role"] == "user"])
     db.add(Conversation(
@@ -213,7 +226,7 @@ async def reading_chat(
                         progress2.current_wiki_id = None
                         progress2.completed_wikis = []
                     await db2.commit()
-                yield "[CHAPTER_END]"
+                yield "\n\n<!--CHAPTER_END-->"
             finally:
                 await db2.close()
         return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
@@ -387,13 +400,7 @@ async def get_progress(
             stored = json.loads(progress.assessment_result)
             ch_key = str(max(progress.current_chapter, 1))
             fw = stored.get("chapter_frameworks", {}).get(ch_key, {})
-            def _theses(node):
-                items = []
-                if isinstance(node, dict):
-                    if node.get("thesis"): items.append(node["thesis"])
-                    for b in node.get("branches", []): items.extend(_theses(b))
-                return items
-            resp.chapter_concepts = _theses(fw.get("argument_tree", {}))
+            resp.chapter_concepts = _extract_theses(fw.get("argument_tree", {}))
         except: pass
 
     if include_history and progress and progress.status not in ("not_started",):
@@ -415,13 +422,7 @@ async def get_progress(
         try:
             if book.category:
                 framework = json.loads(book.category)
-                def _theses2(node):
-                    items = []
-                    if isinstance(node, dict):
-                        if node.get("thesis"): items.append(node["thesis"])
-                        for b in node.get("branches", []): items.extend(_theses2(b))
-                    return items
-                resp.chapter_concepts = _theses2(framework.get("argument_tree", {}))
+                resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
         except: pass
     return resp
 
