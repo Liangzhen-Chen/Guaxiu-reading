@@ -6,8 +6,9 @@ import { API } from "../config";
 function getToken() { if (typeof window === "undefined") return ""; return localStorage.getItem("token") || ""; }
 
 interface Entry {
-  id: string; concept_name: string; entry_type: string; ai_definition: string | null;
+  id: string; concept_name: string; entry_type: string; entry_subtype: string; ai_definition: string | null;
   tags: string[] | null; chapter_index: number | null; evidence: any[] | null;
+  book_title: string | null;
 }
 
 export default function WikiPage() {
@@ -43,10 +44,20 @@ export default function WikiPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {entries.map(e => (
-            <div key={e.id} className="rounded-xl p-5 bg-white border border-stone-200">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs px-2 py-0.5 rounded bg-stone-100 text-stone-500">{e.entry_type === "concept" ? "概念" : "观点"}</span>
-                <span className="text-xs text-stone-400">第{e.chapter_index}章</span>
+            <div key={e.id} className="rounded-xl p-5 bg-white border border-stone-200 hover:border-stone-300 transition-colors">
+              <div className="flex items-center gap-2 mb-1">
+                {(() => {
+                  const st = e.entry_subtype || e.entry_type || "concept";
+                  const label = st === "viewpoint" ? "观点" : st === "case" ? "案例" : "概念";
+                  const colors = st === "viewpoint" ? "bg-purple-50 text-purple-700" :
+                                 st === "case" ? "bg-blue-50 text-blue-700" :
+                                 "bg-amber-50 text-amber-700";
+                  return <span className={"text-xs px-2 py-0.5 rounded "+colors}>{label}</span>;
+                })()}
+                {e.book_title && (
+                  <span className="text-xs text-stone-400 truncate max-w-[200px]">{e.book_title}</span>
+                )}
+                {e.chapter_index && <span className="text-xs text-stone-400">· 第{e.chapter_index}章</span>}
               </div>
               <h3 className="font-chinese text-lg font-semibold mb-1">{e.concept_name}</h3>
               <p className="text-sm text-stone-500 leading-relaxed">{e.ai_definition}</p>

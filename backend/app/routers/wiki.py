@@ -3,9 +3,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.user import User
 from app.models.wiki import WikiEntry
+from app.models.book import Book
 from app.schemas.wiki import WikiEntryResponse, WikiEntryCreate, WikiEntryUpdate
 from app.middleware.auth import get_current_user
 from app.services.wiki_service import create_entry, search_entries, get_entries_by_book
@@ -55,7 +57,21 @@ async def list_entries(
             .limit(limit)
         )
         entries = list(result.scalars().all())
-    return [WikiEntryResponse.model_validate(e) for e in entries]
+
+    # Resolve book titles
+    book_ids = list({e.book_id for e in entries if e.book_id})
+    titles = {}
+    if book_ids:
+        r = await db.execute(select(Book.id, Book.title).where(Book.id.in_(book_ids)))
+        for bid, btitle in r.all():
+            titles[str(bid)] = btitle
+
+    resp = []
+    for e in entries:
+        d = WikiEntryResponse.model_validate(e).model_dump()
+        d["book_title"] = titles.get(str(e.book_id)) if e.book_id else None
+        resp.append(WikiEntryResponse(**d))
+    return resp
 
 
 @router.post("", response_model=WikiEntryResponse, status_code=201)

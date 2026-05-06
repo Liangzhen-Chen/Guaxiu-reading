@@ -221,17 +221,18 @@ async def reading_chat(
     if mode == "quick":
         mode_desc = "快速模式"
         mode_sop = """## 快速模式 SOP
-1. **进入新 Wiki 时**：reading_material 放 AI 对该 wiki 的概括总结，ai_response 提出 1-2 个苏格拉底式追问引导用户思考
-2. **用户回答后**：判定理解程度。若准确则追问 1 个不同角度的问题；若基本准确则确认后 wiki_transition=true；若有偏差则换个方式再追问一次
-3. **每连续完成 4-5 个 wiki**：在 ai_response 中顺带问一句"前面这些有什么问题吗"，但不要停下
-4. **禁止**：主动问用户"要不要继续"、"想先了解哪个"、"给你几个选项"——所有过渡由你判定"""
+1. **进入新 Wiki 时**：reading_material 必须放**当前 wiki 概念的详细概括**（该概念的定义、核心要点、与读者的关联，不是整章总览）。ai_response 提出 1-2 个苏格拉底式追问引导用户思考
+2. **用户回答后**：判定理解程度。若准确则追问 1 个不同角度的问题；若基本准确则确认后 wiki_transition=true，current_wiki.id 更新为 wiki_checklist 中的下一个；若有偏差则换个方式再追问一次
+3. **过渡时**：reading_material 必须立即切换为新 wiki 概念的内容
+4. **每连续完成 4-5 个 wiki**：在 ai_response 中顺带问一句"前面这些有什么问题吗"，但不要停下
+5. **禁止**：主动问用户"要不要继续"、"想先了解哪个"、"给你几个选项"——所有过渡由你判定"""
     else:
         mode_desc = "深度模式"
         mode_sop = """## 深度模式 SOP
-1. **进入新 Wiki 时**：不直接给出总结。reading_material 放相关原文段落（从 wiki 的 quotes 中选取），ai_response 提出引导性问题让用户自己从原文中提炼理解（如"你觉得这段话的核心观点是什么？"）
+1. **进入新 Wiki 时**：不直接给出总结。reading_material 放**当前 wiki 概念相关的原文段落**（从 wiki 的 quotes 中选取，至少2-3段），ai_response 提出引导性问题让用户自己从原文中提炼理解（如"你觉得这段话的核心观点是什么？"）；ai_response 中以「> 原文：」格式引用关键原文
 2. **用户初次回答后**：不立即评判对错。换一段原文或换个角度，再问 1-2 次，引导用户深化理解（2-3 轮原文引导）
 3. **用户理解后**：进入苏格拉底追问阶段（2-3 轮），从不同场景/角度验证理解
-4. **判定理解后 wiki_transition=true**
+4. **判定理解后 wiki_transition=true**，current_wiki.id 更新为 wiki_checklist 中的下一个。reading_material 立即切换为新 wiki 概念的内容
 5. **禁止**：主动问用户"要不要继续"、给选项——所有过渡由你判定"""
 
     profile = {}
@@ -239,18 +240,35 @@ async def reading_chat(
         try: profile = json.loads(progress.assessment_result).get("profile", {})
         except: pass
 
+    # Language detection: if book text is predominantly English but UI is Chinese, add instruction
+    lang_instruction = "中文对话" if language == "zh" else "English conversation"
+    if language == "zh" and book_text:
+        sample = book_text[:2000]
+        ascii_chars = sum(1 for c in sample if ord(c) < 128)
+        if ascii_chars > len(sample) * 0.6:
+            # Book is mostly English, user wants Chinese
+            lang_instruction = """重要语言规则：本书原文为英文。你必须使用中文进行对话和提问。
+- ai_response 全部用中文，包括对用户的理解反馈、追问等
+- reading_material 可以用英文原文（保持原汁原味），但如果引用原文后需附带中文解释
+- 禁止直接用英文与用户对话"""
+
+    # No wiki fallback message
+    no_wiki_note = ""
+    if not wiki_checklist:
+        no_wiki_note = "\n## ⚠️ 本章暂无预生成Wiki清单。请基于全书原文和对话历史，自行从文本中提炼概念来引导用户。行为如同快速模式。"
+
     p4_prompt = _p("p4_reading", language).format(
         book_title=book.title,
         mode_description=mode_desc,
         mode_sop=mode_sop,
-        wiki_checklist=json.dumps(wiki_checklist, ensure_ascii=False),
+        wiki_checklist=json.dumps(wiki_checklist, ensure_ascii=False) if wiki_checklist else "[]",
         current_wiki=f"{current_wiki_id}",
         completed_wikis=json.dumps(completed_wikis, ensure_ascii=False),
         user_profile=json.dumps(profile, ensure_ascii=False),
-        language_instruction="中文对话" if language == "zh" else "English conversation",
+        language_instruction=lang_instruction,
     )
 
-    system_msgs = [{"role": "system", "content": f"{p4_prompt}\n\n## 全书原文\n{book_text[:50000]}"}]
+    system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}\n\n## 全书原文\n{book_text[:50000]}"}]
     messages = system_msgs + history
 
     # 流式对话（先收集完整响应，解析JSON，再返回文本）
@@ -301,15 +319,21 @@ async def reading_chat(
                             progress2.completed_wikis = done
                         progress2.current_wiki_id = new_wiki_id
 
-                # Chapter end: only on explicit /next command
-                if data.message.strip() == "/next":
+                # Auto chapter end: all wikis completed, OR explicit /next command
+                is_next = data.message.strip() == "/next"
+                all_done = wiki_checklist and len(progress2.completed_wikis or []) >= len(wiki_checklist)
+                if is_next or all_done:
                     yield "\n\n[CHAPTER_END]"
                     total = book.chapter_count or 1
                     if chapter >= total:
                         progress2.status = "completed"
+                        progress2.current_wiki_id = None
+                        progress2.completed_wikis = []
                     else:
                         progress2.current_chapter = chapter + 1
                         progress2.status = "paused"
+                        progress2.current_wiki_id = None
+                        progress2.completed_wikis = []
 
             await db2.commit()
         finally:

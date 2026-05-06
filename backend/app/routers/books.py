@@ -178,7 +178,7 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
 
                 # Build deduplicated regex chapter list
                 import re as _re
-                _pattern = r"(第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
+                _pattern = r"(Part\s+[IVXLCDM]+|第[一二三四五六七八九十百千\d]+章|Chapter\s+\d+|CHAPTER\s+\d+)"
                 _parts = _re.split(_pattern, result["text"])
                 _seen = set()
                 regex_chapters = []
@@ -195,10 +195,10 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
 
                 # Sample text: skip front matter, include beginning + middle
                 full_text = result["text"]
-                text_sample = full_text[500:25000]  # skip potential ads/copyright
-                if len(full_text) > 40000:
+                text_sample = full_text[500:40000]  # skip potential ads/copyright
+                if len(full_text) > 50000:
                     mid = len(full_text) // 2
-                    text_sample += "\n...(书中段)...\n" + full_text[mid:mid+8000]
+                    text_sample += "\n...(书中段)...\n" + full_text[mid:mid+10000]
 
                 p1_prompt = _p("p1_parse", "zh").replace("{regex_chapters}", regex_list)
                 raw = await llm_chat(
@@ -348,6 +348,53 @@ async def get_preprocess_status(
     }
 
 
+import re as _re
+
+def _fallback_wikis(text: str, min_concepts: int = 3) -> list[dict]:
+    """Extract basic wiki concepts from text when LLM fails."""
+    # Strategy: find lines that look like headings or contain key terms
+    lines = text.strip().split('\n')
+    candidates: list[tuple[str, str]] = []
+
+    # Grab lines that look like definitions: "X is/refers to/means Y"
+    for line in lines:
+        line = line.strip()
+        if len(line) < 10:
+            continue
+        # Match patterns: "X is ...", "X — ...", "X refers to ..."
+        for pat in [r'^(.+?)是', r'^(.+?)指', r'^(.+?)—', r'^(.+?)：', r'^(.+?) is ', r'^(.+?) refers to']:
+            m = _re.search(pat, line)
+            if m:
+                term = m.group(1).strip()
+                if 2 <= len(term) <= 40 and term not in [c[0] for c in candidates]:
+                    candidates.append((term, line[:200]))
+                    break
+
+    # If not enough heading-style candidates, take longest meaningful lines
+    if len(candidates) < min_concepts:
+        for line in lines[:100]:
+            line = line.strip()
+            if len(line) > 30 and len(line) < 300 and line not in [c[0] for c in candidates]:
+                # Take first meaningful phrase as concept name
+                phrase = line.split('。')[0].split('.')[0].strip()
+                if len(phrase) > 4:
+                    candidates.append((phrase[:40], line[:200]))
+                if len(candidates) >= min_concepts:
+                    break
+
+    # Build wiki entries
+    wikis = []
+    for i, (name, context) in enumerate(candidates[:max(min_concepts, 5)]):
+        wikis.append({
+            "id": f"fb_{i+1}",
+            "name": name,
+            "content": context,
+            "type": "concept",
+            "quotes": [{"text": context, "context": "自动提取自原文"}]
+        })
+    return wikis or [{"id": "fb_1", "name": "本章导览", "content": text[:500], "type": "concept", "quotes": []}]
+
+
 async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapters: int):
     """后台逐章调用 P2 生成 Wiki"""
     import json as _json
@@ -377,12 +424,25 @@ async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapt
                 prompt = prompt.replace("{book_title}", title)
                 prompt = prompt.replace("{chapter_index}", str(ch))
 
-                raw = await chat(
-                    [{"role": "system", "content": prompt}, {"role": "user", "content": ch_text[:30000]}],
-                    temperature=0.3, max_tokens=4096,
-                )
-                try:
-                    wiki_data = extract_json(raw)
+                wiki_data = None
+                for attempt in range(3):  # Retry up to 3 times
+                    raw = await chat(
+                        [{"role": "system", "content": prompt}, {"role": "user", "content": ch_text[:30000]}],
+                        temperature=0.3 + attempt * 0.15, max_tokens=4096,
+                    )
+                    try:
+                        wiki_data = extract_json(raw)
+                        wikis = wiki_data.get("wikis", [])
+                        if not wikis:
+                            # Empty wikis — force retry with stronger instruction
+                            prompt_retry = prompt + "\n\n⚠️ 上一轮你返回了空的 wikis 数组。必须基于本章文本提取至少 3 个概念。"
+                            prompt = prompt_retry  # use this for remaining attempts
+                            continue
+                        break
+                    except ValueError:
+                        continue  # JSON parse failed, retry
+
+                if wiki_data:
                     chapter_wikis[str(ch)] = wiki_data
                     progress["completed_chapters"] = ch
 
@@ -395,8 +455,25 @@ async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapt
                         )
                     )
                     await db.commit()
-                except ValueError:
-                    continue  # Skip failed chapter, keep processing
+                else:
+                    # All retries exhausted — generate minimal fallback wikis from text
+                    print(f"WARNING: Chapter {ch} wiki generation failed after 3 attempts, using fallback")
+                    fallback = {
+                        "chapter_index": ch,
+                        "chapter_title": f"第{ch}章",
+                        "chapter_summary": ch_text[:500],
+                        "wikis": _fallback_wikis(ch_text)
+                    }
+                    chapter_wikis[str(ch)] = fallback
+                    progress["completed_chapters"] = ch
+                    pp_data = {**progress, "chapter_wikis": chapter_wikis, "ready_to_read": ch >= 2}
+                    await db.execute(
+                        update(Book).where(Book.id == book_id).values(
+                            preprocess_status="ready" if ch >= 2 else "processing",
+                            preprocess_progress=pp_data,
+                        )
+                    )
+                    await db.commit()
 
             # All chapters done
             await db.execute(

@@ -21,12 +21,15 @@ class WikiEntryResponse(BaseModel):
     id: UUID
     concept_name: str
     chapter_index: int | None
+    entry_type: str | None
+    entry_subtype: str | None
     ai_definition: str | None
     user_understanding: str | None
     notes: str | None
     tags: list | None
     source_quote: str | None
     book_id: UUID | None
+    book_title: str | None  # resolved from books table
     parent_concept_id: UUID | None
     created_at: datetime
     updated_at: datetime

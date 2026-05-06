@@ -51,7 +51,17 @@ export default function ReadPage() {
   useEffect(() => {
     if (status !== "select-mode") return;
     if (concepts.length > 0 || pollCount.current >= 10) return;
-    const t = setInterval(() => { pollCount.current++; loadState(); }, 2000);
+    const t = setInterval(async () => {
+      pollCount.current++;
+      // Only poll wiki/concepts, don't overwrite user's mode selection
+      const res = await fetch(`${API}/api/reading/resume/${book_id}`, { headers: { Authorization: `Bearer ${T()}` } });
+      if (res.ok) {
+        const d = await res.json();
+        if (d.wiki_checklist?.length) { setWikiChecklist(d.wiki_checklist); }
+        if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
+        if (d.mode && !mode) setMode(d.mode);  // only set if not already chosen
+      }
+    }, 2000);
     return () => clearInterval(t);
   }, [status, concepts.length]);
 
@@ -97,7 +107,7 @@ export default function ReadPage() {
     setStatus(s);
     if (d.current_chapter > 0) {
       loadChapterText(d.current_chapter);
-      setChapterTitle(`第 ${d.current_chapter} 章`);
+      setChapterTitle(L()==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`);
     }
     if (s === "reading" && !started.current) started.current = true;
     // Show start button for fresh reading entry or chapter transitions (paused→reading)
@@ -128,6 +138,7 @@ export default function ReadPage() {
         setAssessmentQ(null);
         setStatus("reading");
         loadChapterText(1);
+        loadState();  // sync mode, wiki checklist, chapter from backend
         if (!started.current) started.current = true;
         setShowStartButton(true);
         if (!started.current) { started.current = true; }
@@ -171,8 +182,8 @@ export default function ReadPage() {
                   w.id === currentWikiId ? "done" : w.status
               })));
             }
-            setReadingMaterial(parsed.reading_material || "");
-            if (isSummary) { setChapterTitle(`第 ${chapter} 章`); }
+            if (parsed.reading_material) setReadingMaterial(parsed.reading_material);
+            if (isSummary) { setChapterTitle(L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`); }
           } catch {}
         }
         if (full.includes("[CHAPTER_END]")) {
@@ -197,7 +208,7 @@ export default function ReadPage() {
           return;
         }
       }
-      if (isSummary) { setChapterTitle(`第 ${chapter} 章`); }
+      if (isSummary) { setChapterTitle(L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`); }
       setStreaming(false);
     }
   }
@@ -242,10 +253,10 @@ export default function ReadPage() {
         <div className="mb-6">
           <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"阅读深度":"Reading Depth"}</div>
           <div className="space-y-2">
-            {[{id:"quick",t:"快速模式",d:"AI概括为主，15-20分钟/章",icon:"⚡",desc:"以AI讲解和概括为主，几乎不涉及原文，适合快速了解全书"},{id:"deep",t:"深度模式",d:"原文精读，30-40分钟/章",icon:"🔍",desc:"大量原文引用，AI逐段解析追问，适合精读掌握"}].map(m=>(
+            {[{id:"quick",t_zh:"快速模式",t_en:"Quick Mode",d_zh:"AI概括为主，15-20分钟/章",d_en:"AI summary, 15-20min/ch",icon:"⚡",desc_zh:"以AI讲解和概括为主，几乎不涉及原文，适合快速了解全书",desc_en:"AI explains and summarizes with minimal original text. Best for quick overviews."},{id:"deep",t_zh:"深度模式",t_en:"Deep Mode",d_zh:"原文精读，30-40分钟/章",d_en:"Close reading, 30-40min/ch",icon:"🔍",desc_zh:"大量原文引用，AI逐段解析追问，适合精读掌握",desc_en:"Heavy original text with AI paragraph-by-paragraph analysis. Best for deep mastery."}].map(m=>(
               <div key={m.id} onClick={()=>setMode(m.id)} className={`cursor-pointer rounded-xl p-4 transition-all ${mode===m.id?"border-2 border-stone-800 bg-stone-50":"border border-stone-200 bg-white"}`}>
-                <div className="flex items-center gap-2 mb-1"><span className="text-xl">{m.icon}</span><span className="font-display font-semibold">{m.t}</span><span className="text-xs text-stone-400">{m.d}</span></div>
-                <p className="text-xs text-stone-400 ml-8">{m.desc}</p>
+                <div className="flex items-center gap-2 mb-1"><span className="text-xl">{m.icon}</span><span className="font-display font-semibold">{L()==="zh"?m.t_zh:m.t_en}</span><span className="text-xs text-stone-400">{L()==="zh"?m.d_zh:m.d_en}</span></div>
+                <p className="text-xs text-stone-400 ml-8">{L()==="zh"?m.desc_zh:m.desc_en}</p>
               </div>
             ))}
           </div>
@@ -262,17 +273,17 @@ export default function ReadPage() {
   const chatMsgs = messages.filter(m => m.content !== summary); // exclude summary from chat
 
   return (
-    <div className="px-6" style={{zoom:1.2}}>
+    <div className="px-6" style={{zoom:1.1}}>
       {/* Top bar */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <span className="font-display font-bold text-xl">{chapterTitle || `第 ${chapter} 章`}</span>
+          <span className="font-display font-bold text-xl">{chapterTitle || (L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`)}</span>
           {total > 0 && <span className="text-stone-400">/ {total}</span>}
           <div className="h-1.5 w-32 rounded-full bg-stone-100 hidden sm:block"><div className="h-1.5 rounded-full bg-stone-800 transition-all" style={{width:`${progress}%`}}/></div>
         </div>
         <div className="flex gap-3 text-xs text-stone-400">
-          <button onClick={()=>router.push(`/read/${book_id}/toc`)} className="hover:text-stone-800">目录</button>
-          <span>{mode==="quick"?"快速":mode==="balanced"?"交互":"深度"}</span>
+          <button onClick={()=>router.push(`/read/${book_id}/toc`)} className="hover:text-stone-800">{L()==="zh"?"目录":"TOC"}</button>
+          <span>{mode==="quick"?(L()==="zh"?"快速":"Quick"):mode==="balanced"?(L()==="zh"?"交互":"Mixed"):(L()==="zh"?"深度":"Deep")}</span>
         </div>
       </div>
 
@@ -280,7 +291,7 @@ export default function ReadPage() {
         {/* LEFT: Wiki Checklist */}
         <div className="w-48 shrink-0 hidden lg:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-3 max-h-[70vh] overflow-y-auto">
-            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">本章 Wiki</div>
+            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{L()==="zh"?"本章 Wiki":"Chapter Wiki"}</div>
             {wikiChecklist.length > 0 ? wikiChecklist.map((w: any) => (
               <div key={w.id}
                 className={`text-xs px-2 py-1 rounded mb-0.5 ${
@@ -291,20 +302,17 @@ export default function ReadPage() {
                 {w.status === "done" ? "✓ " : w.id === currentWikiId || w.status === "active" ? "● " : "○ "}{w.name}
               </div>
             )) : <div className="text-xs text-stone-400">
-              {status==="reading" ? "暂无 Wiki，请先在书架点击\"AI帮你读\"" : "开始导读后显示"}
+              {status==="reading" ? (L()==="zh"?"暂无 Wiki，请先在书架点击\"AI帮你读\"":"No wiki yet. Click \"AI Read\" on Bookshelf") : (L()==="zh"?"开始导读后显示":"Shown after reading starts")}
             </div>}
-            <button onClick={()=>sendMsg("/next")} className="mt-3 w-full text-xs py-1 rounded border border-stone-200 text-stone-400 hover:bg-stone-50">跳过本章 →</button>
+            <button onClick={()=>{if(!streaming)sendMsg("/next");}} disabled={streaming} className="mt-3 w-full text-xs py-1 rounded border border-stone-200 text-stone-400 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed">{L()==="zh"?"跳过本章 →":"Skip Chapter →"}</button>
           </div>
         </div>
 
         {/* CENTER: Reading Material */}
         <div className="w-80 shrink-0 hidden md:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-4 max-h-[70vh] overflow-y-auto">
-            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{mode==="deep"?"原文":"阅读材料"}</div>
-            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap">
-              {readingMaterial ? <span>{readingMaterial}</span> :
-               <span className="text-stone-400">对话开始后，AI 生成的阅读材料会出现在这里</span>}
-            </div>
+            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{mode==="deep"?(L()==="zh"?"原文":"Original Text"):(L()==="zh"?"阅读材料":"Reading Material")}</div>
+            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: readingMaterial ? renderMD(readingMaterial) : `<span class="text-stone-400">${L()==="zh"?"对话开始后，AI 生成的阅读材料会出现在这里":"Reading material will appear here once the conversation starts"}</span>`}} />
           </div>
         </div>
 
@@ -343,7 +351,7 @@ export default function ReadPage() {
                 {chatMsgs.map((m,i)=>(
                   <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
-                      {m.role==="assistant" ? <span className="whitespace-pre-wrap">{m.content}</span> : <span className="whitespace-pre-wrap">{m.content}</span>}
+                      {m.role==="assistant" ? <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: renderMD(m.content)}} /> : <span className="whitespace-pre-wrap">{m.content}</span>}
                     </div>
                   </div>
                 ))}
@@ -362,44 +370,60 @@ export default function ReadPage() {
                   placeholder={L()==="zh"?"写下你的理解…":"Write your understanding…"}
                   className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none bg-stone-50 border border-stone-200 focus:border-stone-400"
                   disabled={streaming}/>
-                <button onClick={()=>sendMsg()} disabled={streaming} className={`cursor-pointer rounded-xl px-5 py-2.5 text-sm font-medium text-white ${streaming?"bg-stone-400":"bg-stone-900 hover:bg-black"}`}>{streaming?"…":"发送"}</button>
+                <button onClick={()=>sendMsg()} disabled={streaming} className={`cursor-pointer rounded-xl px-5 py-2.5 text-sm font-medium text-white ${streaming?"bg-stone-400":"bg-stone-900 hover:bg-black"}`}>{streaming?"…":(L()==="zh"?"发送":"Send")}</button>
               </div>
             </div>
           )}
         </div>
       </div>
       {wikiSelection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
-          <div className="bg-white rounded-2xl p-6 w-96 max-h-[70vh] overflow-y-auto shadow-xl">
-            <h3 className="font-semibold mb-3 text-lg">{L()==="zh"?"选择导入 Wiki":"Import to Wiki"}</h3>
-            {wikiSelection.wikis?.map((w:any,i:number)=>(
-              <label key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-stone-50 cursor-pointer">
-                <input type="checkbox" defaultChecked className="mt-0.5" data-wiki-index={i}/>
-                <div>
-                  <div className="text-sm font-medium">{w.name}</div>
-                  <div className="text-xs text-stone-400">{w.content?.substring(0,80)}</div>
-                  {w.type && <span className="text-2xs px-1.5 py-0.5 rounded bg-stone-100 text-stone-500 ml-1">{w.type}</span>}
-                </div>
-              </label>
-            ))}
-            {wikiSelection.concepts?.map((c:any,i:number)=>(
-              <label key={`c${i}`} className="flex items-start gap-2 p-2 rounded-lg hover:bg-stone-50 cursor-pointer">
-                <input type="checkbox" defaultChecked className="mt-0.5" data-concept-index={i}/>
-                <div><div className="text-sm font-medium">{c.name}</div><div className="text-xs text-stone-400">{c.definition?.substring(0,80)}</div></div>
-              </label>
-            ))}
-            <div className="flex gap-2 mt-4">
-              <button onClick={()=>setWikiSelection(null)} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm text-stone-400 border flex-1">{L()==="zh"?"取消":"Cancel"}</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl p-6 w-[480px] max-h-[75vh] overflow-y-auto shadow-2xl">
+            <div className="mb-5">
+              <h3 className="font-bold text-xl text-stone-800 mb-1">{L()==="zh"?"本章概念沉淀":"Chapter Concepts"}</h3>
+              <p className="text-sm text-stone-400">{L()==="zh"?"勾选要导入 Wiki 的概念，未勾选的会被丢弃":"Check concepts to import into your Wiki. Unchecked will be discarded."}</p>
+            </div>
+            <div className="space-y-1.5">
+              {(wikiSelection.wikis || []).map((w:any,i:number)=>{
+                const typeLabel = w.type || w.entry_type || "concept";
+                const typeColor = typeLabel === "case" ? "bg-blue-50 text-blue-700" :
+                  typeLabel === "viewpoint" ? "bg-purple-50 text-purple-700" :
+                  "bg-amber-50 text-amber-700";
+                return (
+                  <label key={i} className="flex items-start gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer border border-transparent hover:border-stone-200 transition-all">
+                    <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900" data-wiki-index={i}/>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-medium text-stone-800">{w.name}</span>
+                        <span className={"text-[10px] px-1.5 py-0.5 rounded-full "+typeColor}>{w.type || w.entry_type || "concept"}</span>
+                      </div>
+                      <div className="text-xs text-stone-400 line-clamp-2">{w.content?.substring(0,120)}</div>
+                    </div>
+                  </label>
+                );
+              })}
+              {(wikiSelection.concepts || []).map((c:any,i:number)=>(
+                <label key={`c${i}`} className="flex items-start gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer border border-transparent hover:border-stone-200 transition-all">
+                  <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900" data-concept-index={i}/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-stone-800 mb-0.5">{c.name}</div>
+                    <div className="text-xs text-stone-400 line-clamp-2">{c.definition?.substring(0,120)}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-5 pt-4 border-t border-stone-100">
+              <button onClick={()=>setWikiSelection(null)} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm text-stone-500 hover:text-stone-700 border border-stone-200 hover:border-stone-300 flex-1 transition-colors">{L()==="zh"?"取消":"Cancel"}</button>
               <button onClick={(e) => {
                 const checked: any[] = [];
-                e.currentTarget.parentElement?.querySelectorAll('input:checked').forEach((cb: any) => {
+                e.currentTarget.closest('.bg-white')?.querySelectorAll('input:checked').forEach((cb: any) => {
                   const wi = cb.dataset.wikiIndex;
                   const ci = cb.dataset.conceptIndex;
                   if (wi !== undefined && wikiSelection.wikis) checked.push(wikiSelection.wikis[parseInt(wi)]);
                   if (ci !== undefined && wikiSelection.concepts) checked.push(wikiSelection.concepts[parseInt(ci)]);
                 });
                 if (checked.length > 0) batchSave(checked);
-              }} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm font-medium text-white bg-stone-900 hover:bg-black flex-1">{L()==="zh"?"确认导入":"Import"}</button>
+              }} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm font-medium text-white bg-stone-900 hover:bg-black flex-1 transition-colors">{L()==="zh"?"确认导入":"Import"}</button>
             </div>
           </div>
         </div>
