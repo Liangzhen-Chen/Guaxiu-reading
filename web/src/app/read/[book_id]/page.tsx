@@ -44,6 +44,7 @@ export default function ReadPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const readingFirstMsg = useRef(false);
+  const readingTriggered = useRef(false);
 
   const pollCount = useRef(0);
   useEffect(() => { pollCount.current = 0; loadState(); }, [book_id]);
