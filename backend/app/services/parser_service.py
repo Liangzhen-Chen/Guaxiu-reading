@@ -9,7 +9,7 @@ from pathlib import Path
 from app.config import settings
 
 
-async def parse_document(file_path: str, original_filename: str) -> dict:
+def parse_document(file_path: str, original_filename: str) -> dict:
     """
     解析上传文件 → 输出 Markdown。
     返回: {"text": "...", "token_count": N, "chapter_count": N, "warnings": [...]}

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-import { API } from "../config";
+import { API, timeoutSignal } from "../config";
 
 export default function LoginPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState("");
@@ -21,7 +21,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password: pwd }),
-        signal: AbortSignal.timeout(30000),
+        signal: timeoutSignal(30000).signal,
       });
       if (res.ok) {
         const d = await res.json().catch(() => ({} as any));

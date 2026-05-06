@@ -18,9 +18,12 @@ os.makedirs(AVATAR_DIR, exist_ok=True)
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
+    # 密码最小长度校验
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="注册失败，请检查输入")
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="此邮箱已注册")
+        raise HTTPException(status_code=400, detail="注册失败，请检查输入")
     import random, string
     user = User(
         email=data.email,

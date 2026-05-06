@@ -1,5 +1,6 @@
 """导读路由 —— 核心：苏格拉底式流式对话"""
 import json
+import httpx
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -257,6 +258,30 @@ async def reading_chat(
     if not wiki_checklist:
         no_wiki_note = "\n## ⚠️ 本章暂无预生成Wiki清单。请基于全书原文和对话历史，自行从文本中提炼概念来引导用户。行为如同快速模式。"
 
+    # P6: Compress conversation history if too many rounds
+    user_rounds = len([m for m in history if m["role"] == "user"])
+    if user_rounds > 15:
+        from app.services.socratic_service import compress_conversation
+        # Keep last ~10 user rounds (walk backwards from end)
+        keep_rounds = 10
+        split_idx = len(history)
+        counted = 0
+        for i in range(len(history) - 1, -1, -1):
+            if history[i]["role"] == "user":
+                counted += 1
+            if counted > keep_rounds:
+                split_idx = i
+                break
+        if split_idx > 0:
+            old_part = history[:split_idx]
+            recent_part = history[split_idx:]
+            try:
+                compressed = await compress_conversation(old_part, language)
+                recent_part.insert(0, {"role": "system", "content": f"[Previous conversation summary]: {compressed}"})
+                history = recent_part
+            except Exception:
+                pass  # compression failure is non-critical
+
     p4_prompt = _p("p4_reading", language).format(
         book_title=book.title,
         mode_description=mode_desc,
@@ -268,14 +293,14 @@ async def reading_chat(
         language_instruction=lang_instruction,
     )
 
-    system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}\n\n## 全书原文\n{book_text[:50000]}"}]
+    system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}"}]
     messages = system_msgs + history
 
     # 流式对话（先收集完整响应，解析JSON，再返回文本）
     async def generate():
         # Collect full response from AI
         full_response = ""
-        async for token in chat_stream(messages, temperature=0.7, max_tokens=4096):
+        async for token in chat_stream(messages, temperature=0.7, max_tokens=4096, timeout=httpx.Timeout(30.0, read=120.0)):
             full_response += token
 
         # Parse JSON response
@@ -319,10 +344,12 @@ async def reading_chat(
                             progress2.completed_wikis = done
                         progress2.current_wiki_id = new_wiki_id
 
-                # Auto chapter end: all wikis completed, OR explicit /next command
-                is_next = data.message.strip() == "/next"
-                all_done = wiki_checklist and len(progress2.completed_wikis or []) >= len(wiki_checklist)
-                if is_next or all_done:
+                # Auto chapter end: all wikis completed, or fallback to round count
+                all_done = (
+                    (wiki_checklist and len(progress2.completed_wikis or []) >= len(wiki_checklist))
+                    or (not wiki_checklist and (progress2.total_rounds or 0) > 10)
+                )
+                if all_done:
                     yield "\n\n[CHAPTER_END]"
                     total = book.chapter_count or 1
                     if chapter >= total:

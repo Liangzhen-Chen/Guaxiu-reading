@@ -3,20 +3,37 @@
 所有 AI 调用点复用此模块，确保 JSON 输出可靠。
 """
 import json
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Track which fallback strategies are used (for debugging JSON reliability)
+_fallback_used: set[str] = set()
 
 
 def extract_json(raw: str) -> dict:
     """
     从 AI 原始输出中提取 JSON。
-    四层 fallback:
+    预处理 + 四层 fallback:
+      0. 预处理：移除尾部逗号、转换单引号 JSON
       1. 直接 json.loads
       2. 从 ```json 代码块提取
       3. 正则提取 { } 对象
       4. 补全截断的 JSON
     """
     raw = raw.strip()
+
+    # 预处理 0a: 移除对象/数组末尾的逗号 (trailing comma)
+    raw = re.sub(r',\s*}', '}', raw)
+    raw = re.sub(r',\s*]', ']', raw)
+
+    # 预处理 0b: 将单引号键/值转换为双引号 (兼容 Python dict 风格输出)
+    # 匹配单引号括起来的键，如 {'key': ...} -> {"key": ...}
+    raw = re.sub(r"(?<!\\)'([^']*)'(?=\s*:)", r'"\1"', raw)
+    # 匹配单引号括起来的值，如 {"key": 'value'} -> {"key": "value"}
+    raw = re.sub(r'(?<=:)\s*\'([^\']*)\'(?=\s*[,}\]])', r'"\1"', raw)
 
     # 策略1: 直接解析
     try:
@@ -27,6 +44,7 @@ def extract_json(raw: str) -> dict:
     # 策略2: 从 ```json 代码块提取
     m = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', raw, re.DOTALL)
     if m:
+        _mark_fallback("code_block")
         try:
             return json.loads(m.group(1).strip())
         except json.JSONDecodeError:
@@ -35,6 +53,7 @@ def extract_json(raw: str) -> dict:
     # 策略3: 提取 { } 对象
     m = re.search(r'\{.*\}', raw, re.DOTALL)
     if m:
+        _mark_fallback("braces_extract")
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
@@ -48,12 +67,25 @@ def extract_json(raw: str) -> dict:
         missing = open_braces - close_braces
         if missing > 0:
             json_str += '}' * missing
+            _mark_fallback("truncation_repair")
             try:
                 return json.loads(json_str)
             except json.JSONDecodeError:
                 pass
 
     raise ValueError("Failed to extract valid JSON from AI response")
+
+
+def _mark_fallback(strategy: str) -> None:
+    """Track which fallback strategy was used and log it."""
+    if strategy not in _fallback_used:
+        _fallback_used.add(strategy)
+        logger.warning("JSON fallback strategy used: %s — check AI output quality", strategy)
+
+
+def reset_fallback_tracking() -> None:
+    """Reset fallback tracking (useful between requests)."""
+    _fallback_used.clear()
 
 
 async def ai_json_with_retry(

@@ -162,7 +162,7 @@ async def import_from_cos(
     user: User = Depends(get_current_user),
 ):
     """从COS导入书籍：下载→创建记录→后台解析"""
-    from app.services.cos_service import download_from_cos
+    from app.services.cos_service import download_from_cos, delete_from_cos
     key = data.get("key", "")
     filename = data.get("filename", "")
     if not key:
@@ -180,6 +180,12 @@ async def import_from_cos(
     # 从COS下载到本地
     if not download_from_cos(key, local_path):
         raise HTTPException(status_code=500, detail="COS 下载失败，请重试")
+
+    # 下载成功后清理COS远端对象
+    try:
+        delete_from_cos(key)
+    except Exception:
+        pass  # 非关键操作，不影响后续流程
 
     file_size = os.path.getsize(local_path)
     if file_size > settings.max_upload_size_mb * 1024 * 1024:
@@ -279,24 +285,32 @@ async def _parse_in_background(book_id: str, raw_path: str, filename: str, title
                     text_sample += "\n...(书中段)...\n" + full_text[mid:mid+10000]
 
                 p1_prompt = _p("p1_parse", "zh").replace("{regex_chapters}", regex_list)
-                raw = await llm_chat(
-                    [{"role": "system", "content": p1_prompt}, {"role": "user", "content": text_sample}],
-                    temperature=0.3, max_tokens=8192,
-                )
-                p1_data = extract_json(raw)
-                one_liner_val = p1_data.get("one_liner", "")
-                category = _json.dumps(p1_data, ensure_ascii=False)
-                # Keep only AI-validated chapters (compact format)
-                keep_chapters = p1_data.get("keep_chapters", [])
-                if not keep_chapters:
-                    # Fallback: try old validated_chapters format
-                    vc = p1_data.get("validated_chapters", [])
-                    keep_chapters = [c["regex_title"] for c in vc if c.get("action") == "keep"]
-                # Clean markers: remove snippet text after " | "
-                keep_chapters = [c.split(" | ")[0].strip() for c in keep_chapters if c.strip()]
-                if keep_chapters:
-                    final_chapter_count = len(keep_chapters)
-                    p1_ok = True
+                p1_data = None
+                for p1_attempt in range(3):  # retry up to 3 times with escalating temperature
+                    raw = await llm_chat(
+                        [{"role": "system", "content": p1_prompt}, {"role": "user", "content": text_sample}],
+                        temperature=0.3 + p1_attempt * 0.15, max_tokens=8192,
+                    )
+                    try:
+                        p1_data = extract_json(raw)
+                        if p1_data.get("keep_chapters") or p1_data.get("validated_chapters"):
+                            break
+                    except ValueError:
+                        continue
+                if p1_data:
+                    one_liner_val = p1_data.get("one_liner", "")
+                    category = _json.dumps(p1_data, ensure_ascii=False)
+                    # Keep only AI-validated chapters (compact format)
+                    keep_chapters = p1_data.get("keep_chapters", [])
+                    if not keep_chapters:
+                        # Fallback: try old validated_chapters format
+                        vc = p1_data.get("validated_chapters", [])
+                        keep_chapters = [c["regex_title"] for c in vc if c.get("action") == "keep"]
+                    # Clean markers: remove snippet text after " | "
+                    keep_chapters = [c.split(" | ")[0].strip() for c in keep_chapters if c.strip()]
+                    if keep_chapters:
+                        final_chapter_count = len(keep_chapters)
+                        p1_ok = True
             except Exception as e:
                 print(f"[P1] failed: {e}")
 
@@ -377,8 +391,7 @@ async def _fetch_google_toc(title: str, author: str) -> str:
 
 def _parse_sync(raw_path: str, filename: str) -> dict:
     """同步解析文档，在线程池中运行"""
-    import asyncio
-    return asyncio.run(parse_document(raw_path, filename))
+    return parse_document(raw_path, filename)
 
 
 @router.post("/{book_id}/preprocess")

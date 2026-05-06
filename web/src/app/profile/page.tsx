@@ -40,7 +40,7 @@ export default function ProfilePage() {
     load();
   }
 
-  if (!user) return <div className="text-center py-20 text-stone-400">…</div>;
+  if (!user) return <div className="text-center py-20 text-stone-400"><span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span></div>;
 
   return (
     <div className="max-w-md mx-auto mt-12">

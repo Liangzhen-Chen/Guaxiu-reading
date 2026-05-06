@@ -2,11 +2,20 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { API } from "../../config";
+import DOMPurify from "dompurify";
+import { showToast } from "../../toast";
 
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 function L() { return typeof window !== "undefined" ? localStorage.getItem("lang") || "zh" : "zh"; }
 function renderMD(text: string) {
-  return text
+  // Escape raw HTML tags FIRST, before markdown processing, to prevent XSS
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+  return escaped
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/^### (.+)$/gm, '<h3 class="text-base font-semibold mt-3 mb-1">$1</h3>')
@@ -18,6 +27,11 @@ function renderMD(text: string) {
     .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
     .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
     .replace(/\n/g, '<br/>');
+}
+
+/** Render markdown to HTML and sanitize before dangerouslySetInnerHTML */
+function sanitizedMD(text: string): { __html: string } {
+  return { __html: DOMPurify.sanitize(renderMD(text)) };
 }
 
 export default function ReadPage() {
@@ -41,10 +55,18 @@ export default function ReadPage() {
   const [wikiSelection, setWikiSelection] = useState<any>(null);
   const [assessmentQ, setAssessmentQ] = useState<{question:string; options:{label:string;value:string}[]}|null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [assessmentError, setAssessmentError] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const readingFirstMsg = useRef(false);
   const readingTriggered = useRef(false);
+
+  // Ref to track currentWikiId without stale closures in the streaming loop (Bug B2 fix)
+  const currentWikiIdRef = useRef(currentWikiId);
+  useEffect(() => { currentWikiIdRef.current = currentWikiId; }, [currentWikiId]);
+
+  const assessmentFailCount = useRef(0);
 
   const pollCount = useRef(0);
   useEffect(() => { pollCount.current = 0; loadState(); }, [book_id]);
@@ -62,13 +84,15 @@ export default function ReadPage() {
           if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
           if (d.mode && !mode) setMode(d.mode);
         }
-      } catch {}
+      } catch {
+        // Poll failures are expected on initial load
+      }
     }, 2000);
     return () => clearInterval(t);
   }, [status, concepts.length]);
 
   // Auto-trigger first message when status transitions — ensures closure has correct status
-  const [showStartButton, setShowStartButton] = useState(false);  // "开始阅读" / "开始本章" button
+  const [showStartButton, setShowStartButton] = useState(false);
   const assessmentTriggered = useRef(false);
   useEffect(() => {
     if (status === "assessment" && !assessmentTriggered.current) {
@@ -121,7 +145,11 @@ export default function ReadPage() {
     setMode(m);
     try {
       await fetch(`${API}/api/reading/mode`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, mode: m, language: L() }), signal: AbortSignal.timeout(30000) });
-    } catch {}
+    } catch {
+      setError("模式设置失败，请检查网络后重试");
+      showToast("模式设置失败，请检查网络后重试", "error");
+      return;
+    }
     setStatus("assessment");
   }
 
@@ -130,46 +158,80 @@ export default function ReadPage() {
     if (!text.trim() || streaming) return;
     if (!silent) setInput("");
     setStreaming(true);
+    setError("");
 
     if (status === "assessment") {
-      setAssessmentLoading(true); try {
-      const res = await fetch(`${API}/api/reading/assessment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
-      setAssessmentLoading(false);
-      const d = await res.json();
-      if (!res.ok) { alert(d.detail || "评估请求失败"); setStreaming(false); return; }
-      if (d.assessment_complete) {
-        setAssessmentQ(null);
-        setStatus("reading");
-        loadState();  // sync mode, wiki checklist, chapter from backend
-        if (!started.current) started.current = true;
-        setShowStartButton(true);
-        if (!started.current) { started.current = true; }
-      } else {
-        try {
-          const parsed = JSON.parse(d.ai_message);
-          if (parsed.question && parsed.options?.length) {
-            setAssessmentQ(parsed);
-          }
-          // If no valid card format, just keep loading state — don't leak raw JSON to chat
-        } catch {
-          // JSON parse failed — keep assessmentQ null, retry on next round
+      // --- Assessment branch ---
+      setAssessmentLoading(true);
+      setAssessmentError("");
+      assessmentFailCount.current = 0;
+      try {
+        const res = await fetch(`${API}/api/reading/assessment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
+        setAssessmentLoading(false);
+        const d = await res.json();
+        if (!res.ok) {
+          showToast(d.detail || "评估请求失败", "error");
+          setStreaming(false);
+          return;
         }
+        if (d.assessment_complete) {
+          setAssessmentQ(null);
+          setStatus("reading");
+          loadState();  // sync mode, wiki checklist, chapter from backend
+          setShowStartButton(true);
+          started.current = true;  // Bug B4 fix: single assignment, removed duplicate
+        } else {
+          try {
+            const parsed = JSON.parse(d.ai_message);
+            if (parsed.question && parsed.options?.length) {
+              setAssessmentQ(parsed);
+              assessmentFailCount.current = 0; // reset on success
+            }
+            // If no valid card format, just keep loading state — don't leak raw JSON to chat
+          } catch {
+            // JSON parse failed — count consecutive failures, show retry after 3
+            assessmentFailCount.current++;
+            if (assessmentFailCount.current >= 3) {
+              setAssessmentError("评估响应格式异常，请重试");
+            }
+          }
+        }
+        setStreaming(false);
+      } catch {
+        setAssessmentLoading(false);
+        showToast("评估请求网络异常，请重试", "error");
+        setStreaming(false);
       }
-      setStreaming(false);
     } else {
+      // --- Chat/Reading branch ---
       const isSummary = readingFirstMsg.current;
       readingFirstMsg.current = false;
       if (!silent) setMessages(prev => [...prev, { role: "user", content: text }]);
       const res = await fetch(`${API}/api/reading/chat`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }), signal: AbortSignal.timeout(300000) });
-      if (!res.ok) { setStreaming(false); return; }
+      if (!res.ok) {
+        showToast("对话请求失败，请重试", "error");
+        setStreaming(false);
+        return;
+      }
       const reader = res.body?.getReader();
-      if (!reader) { setStreaming(false); return; }
+      if (!reader) {
+        showToast("无法获取响应流，请重试", "error");
+        setStreaming(false);
+        return;
+      }
       const decoder = new TextDecoder(); let full = "";
       setMessages(prev => [...prev, { role: "assistant", content: "" }]);
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        full += decoder.decode(value, { stream: true });
+        // Wrap reader.read() in try/catch to prevent UI freeze on connection drops
+        try {
+          const { done, value } = await reader.read();
+          if (done) break;
+          full += decoder.decode(value, { stream: true });
+        } catch {
+          showToast("连接中断，请重试", "error");
+          setStreaming(false);
+          return;
+        }
         // v4.0: Extract V4_META marker from streamed text
         const metaMatch = full.match(/<!--V4_META:([\s\S]*?)-->/);
         const displayText = metaMatch ? full.replace(/<!--V4_META:[\s\S]*?-->/, '').trim() : full;
@@ -180,14 +242,18 @@ export default function ReadPage() {
             const parsed = JSON.parse(metaMatch[1]);
             if (parsed.current_wiki?.id) {
               setCurrentWikiId(parsed.current_wiki.id);
+              // Use ref to avoid stale closure on currentWikiId (Bug B2 fix)
+              const prevWikiId = currentWikiIdRef.current;
               setWikiChecklist(prev => prev.map((w: any) => ({
                 ...w, status: w.id === parsed.current_wiki.id ? "active" :
-                  w.id === currentWikiId ? "done" : w.status
+                  w.id === prevWikiId ? "done" : w.status
               })));
             }
             if (parsed.reading_material) setReadingMaterial(parsed.reading_material);
             if (isSummary) { setChapterTitle(L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`); }
-          } catch {}
+          } catch {
+            // Meta parse failure — non-critical, continue
+          }
         }
         if (full.includes("[CHAPTER_END]")) {
           setReadingMaterial("");
@@ -206,7 +272,9 @@ export default function ReadPage() {
               const wData = await wRes.json();
               if (wData.wikis?.length) { setWikiSelection({ wikis: wData.wikis }); }
             }
-          } catch {}
+          } catch {
+            showToast("章节结束处理失败", "error");
+          }
           loadState();
           return;
         }
@@ -227,6 +295,9 @@ export default function ReadPage() {
   if (status === "select-mode") {
     return (
       <div className="max-w-2xl mx-auto mt-8">
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>
+        )}
         <h1 className="font-display text-3xl font-bold mb-2 text-stone-800">{L()==="zh"?"选择阅读模式":"Select Reading Mode"}</h1>
         <p className="text-sm text-stone-400 mb-6">{L()==="zh"?"AI 会根据你选择的深度，调整追问的层次和对话的节奏。":"AI will adjust the depth of questioning and pace of dialogue based on your choice."}</p>
 
@@ -277,6 +348,11 @@ export default function ReadPage() {
 
   return (
     <div className="px-6" style={{zoom:1.1}}>
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>
+      )}
+
       {/* Top bar */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -315,13 +391,21 @@ export default function ReadPage() {
         <div className="w-80 shrink-0 hidden md:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-4 max-h-[70vh] overflow-y-auto">
             <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{mode==="deep"?(L()==="zh"?"原文":"Original Text"):(L()==="zh"?"阅读材料":"Reading Material")}</div>
-            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: readingMaterial ? renderMD(readingMaterial) : `<span class="text-stone-400">${L()==="zh"?"对话开始后，AI 生成的阅读材料会出现在这里":"Reading material will appear here once the conversation starts"}</span>`}} />
+            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap" dangerouslySetInnerHTML={readingMaterial ? sanitizedMD(readingMaterial) : {__html: `<span class="text-stone-400">${L()==="zh"?"对话开始后，AI 生成的阅读材料会出现在这里":"Reading material will appear here once the conversation starts"}</span>`}} />
           </div>
         </div>
 
         {/* RIGHT: Chat / Assessment */}
         <div className="flex-1 min-w-0">
-          {status === "assessment" && assessmentQ ? (
+          {status === "assessment" && assessmentError ? (
+            <div className="rounded-2xl border border-stone-200 bg-white p-6 text-center">
+              <p className="text-sm text-red-500 mb-4">{assessmentError}</p>
+              <button onClick={() => sendMsg(L()==="zh"?"开始评估":"Start assessment", true)}
+                className="cursor-pointer rounded-xl px-6 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">
+                {L()==="zh"?"重新开始评估":"Retry Assessment"}
+              </button>
+            </div>
+          ) : status === "assessment" && assessmentQ ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-6">
               <div className="text-xs text-stone-400 mb-1 uppercase tracking-wide">{L()==="zh"?"了解你的阅读背景":"Learning your background"}</div>
               <h3 className="font-semibold text-lg text-stone-800 mb-6">{assessmentQ.question}</h3>
@@ -354,7 +438,7 @@ export default function ReadPage() {
                 {chatMsgs.map((m,i)=>(
                   <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
                     <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
-                      {m.role==="assistant" ? <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: renderMD(m.content)}} /> : <span className="whitespace-pre-wrap">{m.content}</span>}
+                      {m.role==="assistant" ? <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={sanitizedMD(m.content)} /> : <span className="whitespace-pre-wrap">{m.content}</span>}
                     </div>
                   </div>
                 ))}

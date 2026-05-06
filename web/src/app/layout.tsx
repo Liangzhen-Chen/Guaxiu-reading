@@ -3,6 +3,7 @@ import "./globals.css";
 import { Nav } from "./nav";
 import { LangProvider } from "./lang";
 import { FeedbackButton } from "./feedback";
+import { ToastContainer } from "./toast";
 
 export const metadata: Metadata = { title: "朽瓜" };
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Nav />
           <main className="px-6 py-12">{children}</main>
           <FeedbackButton />
+          <ToastContainer />
         </LangProvider>
       </body>
     </html>

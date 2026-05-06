@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 
-import { API } from "../config";
+import { API, timeoutSignal } from "../config";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState(""); const [pwd, setPwd] = useState(""); const [pwd2, setPwd2] = useState("");
@@ -19,7 +19,7 @@ export default function RegisterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password: pwd }),
-        signal: AbortSignal.timeout(30000),
+        signal: timeoutSignal(30000).signal,
       });
       if (res.ok) {
         const d = await res.json().catch(() => ({} as any));

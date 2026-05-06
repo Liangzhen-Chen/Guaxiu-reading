@@ -17,12 +17,14 @@ export default function WikiPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const token = getToken();
 
-  useEffect(() => { track("page_view"); if (token) load(); }, []);
+  useEffect(() => { track("page_view"); if (token) { load(); } else { setIsLoading(false); } }, []);
 
   async function load(q?: string) {
     setError("");
+    setIsLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("search", q);
     params.set("limit", "20");
@@ -38,6 +40,8 @@ export default function WikiPage() {
       else setError("加载失败，请稍后重试");
     } catch {
       if (thisReq === reqId) setError("网络连接失败，请检查网络");
+    } finally {
+      if (thisReq === reqId) setIsLoading(false);
     }
   }
 
@@ -52,7 +56,11 @@ export default function WikiPage() {
         <button onClick={() => load(search)} className="rounded-lg px-5 py-3 text-sm font-medium text-white bg-stone-900">搜索</button>
       </div>
       {error && <p className="text-center text-sm text-red-500 mb-4">{error}</p>}
-      {entries.length === 0 ? (
+      {isLoading ? (
+        <div className="text-center py-24 text-stone-400">
+          <span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span>
+        </div>
+      ) : entries.length === 0 ? (
         <div className="text-center py-24 text-stone-400">
           <p className="text-lg mb-2">知识库为空</p>
           <p className="text-sm mb-6">完成导读后，概念会自动沉淀到这里</p>

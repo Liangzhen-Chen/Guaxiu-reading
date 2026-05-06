@@ -2,8 +2,12 @@
 LLM 调用服务 —— DeepSeek API，支持流式输出。
 ⚠️ 预留切换口：修改 model= 参数即可切到任意 OpenAI 兼容模型
 """
+import logging
+import httpx
 from openai import AsyncOpenAI
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # ⚠️ 切换模型只需改 .env 中的 LLM_MODEL，或运行时传 model 参数
 _client: AsyncOpenAI | None = None
@@ -24,11 +28,14 @@ async def chat_stream(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
+    timeout: httpx.Timeout | None = None,
 ):
     """
     流式对话 —— 返回 async generator，逐 token 产出。
     调用方: socratic_service 的苏格拉底追问
     """
+    if timeout is None:
+        timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
     client = get_client()
     stream = await client.chat.completions.create(
         model=model or settings.llm_model,
@@ -36,11 +43,19 @@ async def chat_stream(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
+        timeout=timeout,
     )
+    usage = None
     async for chunk in stream:
-        delta = chunk.choices[0].delta
-        if delta.content:
-            yield delta.content
+        if chunk.usage:
+            usage = chunk.usage
+        if chunk.choices and len(chunk.choices) > 0:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
+    if usage:
+        logger.debug("LLM stream usage: prompt_tokens=%s, completion_tokens=%s",
+                     usage.prompt_tokens, usage.completion_tokens)
 
 
 async def chat(
@@ -48,15 +63,21 @@ async def chat(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int = 4096,
+    timeout: httpx.Timeout | None = None,
 ) -> str:
     """非流式对话 —— 用于概念提取等不需要流式输出的场景"""
+    if timeout is None:
+        timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
     client = get_client()
     response = await client.chat.completions.create(
         model=model or settings.llm_model,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
+        timeout=timeout,
     )
+    logger.debug("LLM chat usage: prompt_tokens=%s, completion_tokens=%s",
+                 response.usage.prompt_tokens, response.usage.completion_tokens)
     return response.choices[0].message.content or ""
 
 

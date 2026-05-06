@@ -1,41 +1,42 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useLang, t } from "../lang";
 import { track } from "../track";
 
-import { API } from "../config";
+import { API, timeoutSignal } from "../config";
+import { showToast } from "../toast";
 function T() { return typeof window !== "undefined" ? localStorage.getItem("token") || "" : ""; }
 
 export default function BooksPage() {
   const [books, setBooks] = useState<any[]>([]);
   const [upProgress, setUpProgress] = useState(0);
   const [upStatus, setUpStatus] = useState<"" | "uploading" | "done" | "error">("");
+  const [upStep, setUpStep] = useState("");
   const [loading, setLoading] = useState(true);
   const router = useRouter(); const { lang } = useLang();
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
-  // Poll while there are parsing or incomplete preprocessing books
-  useEffect(() => {
-    const needsPoll = books.some((b: any) => {
+  // Bug B1 fix: compute needsPoll as a derived value via useMemo
+  const needsPoll = useMemo(() => {
+    return books.some((b: any) => {
       if (b.parse_status === "pending" || b.parse_status === "parsing") return true;
       if (b.preprocess_status === "processing") return true;
       const pp = b.preprocess_progress || {};
       return pp.total_chapters > 0 && (pp.completed_chapters || 0) < pp.total_chapters;
     });
+  }, [books]);
+  useEffect(() => {
     if (!needsPoll) return;
     const t = setInterval(() => load(), 3000);
     return () => clearInterval(t);
-  }, [books.some((b: any) => {
-    if (b.parse_status === "pending" || b.parse_status === "parsing") return true;
-    if (b.preprocess_status === "processing") return true;
-    const pp = b.preprocess_progress || {};
-    return pp.total_chapters > 0 && (pp.completed_chapters || 0) < pp.total_chapters;
-  })]);
+  }, [needsPoll]);
 
   async function api(url: string, opts?: RequestInit) {
     try {
-      const res = await fetch(url, { ...opts, headers: { ...opts?.headers, Authorization: `Bearer ${T()}` } });
+      const topts = timeoutSignal(30000);
+      const res = await fetch(url, { ...opts, signal: topts.signal, headers: { ...opts?.headers, Authorization: `Bearer ${T()}` } });
+      topts.clear();
       if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); }
       return res;
     } catch {
@@ -62,6 +63,7 @@ export default function BooksPage() {
     setUpStatus("uploading"); setUpProgress(0);
     try {
       // Step 1: 获取 COS 预签名上传 URL
+      setUpStep("获取上传地址...");
       const presignRes = await api(API + "/api/books/presign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -70,18 +72,19 @@ export default function BooksPage() {
       // api() returns {ok:false,status:0} on network errors
       if (presignRes.status === 0) {
         setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
-        alert("网络连接失败，请检查网络后重试");
+        showToast("网络连接失败，请检查网络后重试", "error");
         return;
       }
       if (!presignRes.ok) {
         const msg = await (presignRes as Response).text().catch(() => "");
         setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
-        alert("上传配置失败: " + (msg || "请稍后重试"));
+        showToast("上传配置失败: " + (msg || "请稍后重试"), "error");
         return;
       }
       const { upload_url, key } = await (presignRes as Response).json();
 
       // Step 2: 直传 COS（带进度条）
+      setUpStep("上传中");
       const xhr = new XMLHttpRequest();
       xhr.timeout = 600000;
       xhr.open("PUT", upload_url);
@@ -97,6 +100,7 @@ export default function BooksPage() {
       });
 
       // Step 3: 通知后端从 COS 导入
+      setUpStep("导入中...");
       setUpProgress(0);
       const importRes = await api(API + "/api/books/import-cos", {
         method: "POST",
@@ -106,20 +110,20 @@ export default function BooksPage() {
       if (importRes.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
       if (importRes.status === 0) {
         setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
-        alert("网络连接失败，文件已上传但导入失败，请刷新页面重试");
+        showToast("网络连接失败，文件已上传但导入失败，请刷新页面重试", "error");
         return;
       }
       if (importRes.ok) {
         setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load();
       } else {
         setUpStatus("error");
-        try { const d = JSON.parse(await (importRes as Response).text()); alert(d.detail || "导入失败"); } catch(_) { alert("导入失败"); }
+        try { const d = JSON.parse(await (importRes as Response).text()); showToast(d.detail || "导入失败", "error"); } catch(_) { showToast("导入失败", "error"); }
       }
       setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
       resetInput();
     } catch (err: any) {
       setUpStatus("error");
-      alert(err.message || "上传失败，请检查网络后重试");
+      showToast(err.message || "上传失败，请检查网络后重试", "error");
       setTimeout(() => setUpStatus(""), 3000);
       resetInput();
     }
@@ -140,10 +144,10 @@ export default function BooksPage() {
       if (res.ok) { await load(); }
       else {
         const msg = await res.text().catch(() => "");
-        alert(msg || "AI帮你读启动失败，请稍后重试");
+        showToast(msg || "AI帮你读启动失败，请稍后重试", "error");
       }
     } catch {
-      alert("网络错误，请稍后重试");
+      showToast("网络错误，请稍后重试", "error");
     }
     setPreprocessLoading(false);
   }
@@ -154,10 +158,10 @@ export default function BooksPage() {
     try {
       const res = await api(API + "/api/books/" + id, { method: "DELETE" });
       if (res.ok) { load(); }
-      else if (res.status === 404) { alert("书籍不属于当前账号"); localStorage.removeItem("token"); router.push("/login"); }
-      else if (res.status !== 401) { alert("删除失败，请稍后重试"); }
+      else if (res.status === 404) { showToast("书籍不属于当前账号", "error"); localStorage.removeItem("token"); router.push("/login"); }
+      else if (res.status !== 401) { showToast("删除失败，请稍后重试", "error"); }
     } catch {
-      alert("网络错误，请检查后端是否运行");
+      showToast("网络错误，请检查后端是否运行", "error");
     }
     setDeleting("");
   }
@@ -167,15 +171,22 @@ export default function BooksPage() {
       <div className="flex items-center justify-between mb-10">
         <h1 className="font-display text-3xl font-bold text-[#1d1d1f]">{t("bookshelf", lang)}</h1>
         <label className="cursor-pointer inline-flex items-center gap-2 rounded-full bg-[#1d1d1f] text-white px-5 py-2 text-sm font-medium hover:bg-black transition-colors">
-          {upStatus === "uploading" ? `${upProgress}%` : upStatus === "done" ? "✓ 完成" : upStatus === "error" ? "✕ 失败" : t("importBook", lang)}
+          {upStatus === "uploading" ? (upStep === "获取上传地址..." || upStep === "导入中..." ? upStep : `${upProgress}%`) : upStatus === "done" ? "✓ 完成" : upStatus === "error" ? "✕ 失败" : t("importBook", lang)}
           <input type="file" accept=".epub,.pdf,.txt" className="hidden" onChange={doUp} disabled={upStatus === "uploading"} />
         </label>
       </div>
 
       {upStatus === "uploading" && (
         <div className="mb-6 bg-white rounded-xl p-4 border border-stone-200">
-          <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium">上传中</span><span className="text-sm text-stone-400">{upProgress}%</span></div>
-          <div className="h-3 rounded-full bg-stone-100"><div className="h-3 rounded-full bg-stone-900 transition-all duration-300" style={{ width: `${upProgress}%` }} /></div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">{upStep || "上传中"}</span>
+            <span className="text-sm text-stone-400">{upStep === "上传中" ? `${upProgress}%` : upStep === "获取上传地址..." ? "" : upStep === "导入中..." ? "" : `${upProgress}%`}</span>
+          </div>
+          {upStep === "上传中" && (
+            <div className="h-3 rounded-full bg-stone-100">
+              <div className="h-3 rounded-full bg-stone-900 transition-all duration-300" style={{ width: `${upProgress}%` }} />
+            </div>
+          )}
         </div>
       )}
 

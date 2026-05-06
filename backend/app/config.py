@@ -4,6 +4,7 @@
 ⚠️ 模型切换口：LLM_MODEL / VISION_MODEL 通过 .env 切换
 """
 import os
+import warnings
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     # ── JWT ──
     jwt_secret: str = "change-me"
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = 43200  # 30 天
+    jwt_expire_minutes: int = 10080  # 7 天
 
     # ── DeepSeek / LLM ──
     # ⚠️ 预留切换口：改为 deepseek-v4-pro / qwen-max 等待 OpenAI 兼容模型的 model_id 即可
@@ -34,6 +35,10 @@ class Settings(BaseSettings):
     # ── OCR ──
     # ⚠️ 预留切换口：默认 PaddleOCR，可切换为 baidu-ocr-api
     ocr_engine: str = "paddleocr"
+
+    # ── LLM 超时 ──
+    llm_timeout_connect: float = 30.0       # 连接超时（秒）
+    llm_timeout_read: float = 120.0         # 读取超时（秒）
 
     # ── 上下文管理 ──
     context_max_tokens: int = 900_000       # 触发压缩阈值
@@ -61,6 +66,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# 启动时校验：JWT_SECRET 不得为默认值
+if settings.jwt_secret == "change-me":
+    msg = (
+        "WARNING: JWT_SECRET is still set to the default 'change-me' value. "
+        "Set a strong random secret via the JWT_SECRET environment variable or .env file."
+    )
+    print(msg)
+    warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
 # 确保存储目录存在
 Path(settings.book_storage_path).mkdir(parents=True, exist_ok=True)

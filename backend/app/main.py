@@ -5,7 +5,10 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import init_db
 from app.routers import routers
@@ -18,20 +21,39 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """添加安全响应头（HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy）"""
+
+    async def dispatch(self, request, call_next):
+        response: Response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     lifespan=lifespan,
 )
 
-# CORS —— 允许前端跨域访问
+# CORS —— 仅允许指定前端域名和本地开发
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=[
+        "https://www.xiugua-reading.cn",
+        "https://xiugua-reading.cn",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 安全响应头
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 @app.get("/")
@@ -41,7 +63,14 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from app.database import async_session
+    from sqlalchemy import text
+    try:
+        async with async_session() as db:
+            await db.execute(text("SELECT 1"))
+        return {"status": "ok", "database": "connected"}
+    except Exception:
+        return {"status": "degraded", "database": "down"}
 
 # 注册所有路由
 for router in routers:

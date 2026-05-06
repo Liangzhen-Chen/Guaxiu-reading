@@ -55,3 +55,16 @@ def download_from_cos(key: str, local_path: str) -> bool:
     except CosServiceError as e:
         print(f"COS download failed: {e}")
         return False
+
+
+def delete_from_cos(key: str) -> bool:
+    """从COS删除对象"""
+    client = _get_client()
+    bucket = os.environ["COS_BUCKET"]
+    try:
+        client.delete_object(Bucket=bucket, Key=key)
+        print(f"COS deleted: {key}")
+        return True
+    except CosServiceError as e:
+        print(f"COS delete failed: {e}")
+        return False
