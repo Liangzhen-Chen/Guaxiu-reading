@@ -66,6 +66,7 @@ export default function ReadPage() {
   const currentWikiIdRef = useRef(currentWikiId);
   useEffect(() => { currentWikiIdRef.current = currentWikiId; }, [currentWikiId]);
 
+  const [showModeSwitch, setShowModeSwitch] = useState(false);
   const assessmentFailCount = useRef(0);
 
   const pollCount = useRef(0);
@@ -139,6 +140,18 @@ export default function ReadPage() {
     if (s === "reading" && (!hasMessages || messages.length === 0)) {
       setShowStartButton(true);
     }
+  }
+
+  async function switchMode(newMode: string) {
+    setShowModeSwitch(false);
+    try {
+      await fetch(`${API}/api/reading/mode`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, mode: newMode, language: L() }), signal: AbortSignal.timeout(30000) });
+    } catch {
+      showToast(L()==="zh"?"模式切换失败，请重试":"Mode switch failed, please retry", "error");
+      return;
+    }
+    setMode(newMode);
+    loadState();
   }
 
   async function selectMode(m: string) {
@@ -299,7 +312,7 @@ export default function ReadPage() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  if (status === "loading") return <div className="text-center py-20 text-stone-400"><span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span></div>;
+  if (status === "loading") return <div className="text-center py-20 text-stone-500"><span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span></div>;
   if (status === "select-mode") {
     return (
       <div className="max-w-2xl mx-auto mt-8">
@@ -307,13 +320,13 @@ export default function ReadPage() {
           <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>
         )}
         <h1 className="font-display text-3xl font-bold mb-2 text-stone-800">{L()==="zh"?"选择阅读模式":"Select Reading Mode"}</h1>
-        <p className="text-sm text-stone-400 mb-6">{L()==="zh"?"AI 会根据你选择的深度，调整追问的层次和对话的节奏。":"AI will adjust the depth of questioning and pace of dialogue based on your choice."}</p>
+        <p className="text-sm text-stone-500 mb-6">{L()==="zh"?"AI 会根据你选择的深度，调整追问的层次和对话的节奏。":"AI will adjust the depth of questioning and pace of dialogue based on your choice."}</p>
 
         {/* Concepts from parse */}
         {/* v4.0: Wiki checklist preview (if available from preprocess) */}
         {wikiChecklist.length > 0 ? (
           <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6">
-            <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"本章 Wiki 预览":"Chapter Wiki Preview"}</div>
+            <div className="text-xs font-semibold text-stone-500 mb-3 uppercase tracking-wide">{L()==="zh"?"本章 Wiki 预览":"Chapter Wiki Preview"}</div>
             <div className="flex flex-wrap gap-2">
               {wikiChecklist.map((w:any,i:number)=>(
                 <span key={i} className="text-sm px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">{w.name}</span>
@@ -322,7 +335,7 @@ export default function ReadPage() {
           </div>
         ) : concepts.length > 0 ? (
           <div className="rounded-xl border border-stone-200 bg-white p-5 mb-6">
-            <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"本书核心论点":"Core Arguments"}</div>
+            <div className="text-xs font-semibold text-stone-500 mb-3 uppercase tracking-wide">{L()==="zh"?"本书核心论点":"Core Arguments"}</div>
             <div className="flex flex-wrap gap-2">
               {concepts.map((c,i)=>(
                 <span key={i} className="text-sm px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">{c}</span>
@@ -333,18 +346,18 @@ export default function ReadPage() {
 
         {/* Mode selection */}
         <div className="mb-6">
-          <div className="text-xs font-semibold text-stone-400 mb-3 uppercase tracking-wide">{L()==="zh"?"阅读深度":"Reading Depth"}</div>
+          <div className="text-xs font-semibold text-stone-500 mb-3 uppercase tracking-wide">{L()==="zh"?"阅读深度":"Reading Depth"}</div>
           <div className="space-y-2">
             {[{id:"quick",t_zh:"快速模式",t_en:"Quick Mode",d_zh:"AI概括为主，15-20分钟/章",d_en:"AI summary, 15-20min/ch",icon:"⚡",desc_zh:"以AI讲解和概括为主，几乎不涉及原文，适合快速了解全书",desc_en:"AI explains and summarizes with minimal original text. Best for quick overviews."},{id:"deep",t_zh:"深度模式",t_en:"Deep Mode",d_zh:"原文精读，30-40分钟/章",d_en:"Close reading, 30-40min/ch",icon:"🔍",desc_zh:"大量原文引用，AI逐段解析追问，适合精读掌握",desc_en:"Heavy original text with AI paragraph-by-paragraph analysis. Best for deep mastery."}].map(m=>(
-              <div key={m.id} onClick={()=>setMode(m.id)} className={`cursor-pointer rounded-xl p-4 transition-all ${mode===m.id?"border-2 border-stone-800 bg-stone-50":"border border-stone-200 bg-white"}`}>
-                <div className="flex items-center gap-2 mb-1"><span className="text-xl">{m.icon}</span><span className="font-display font-semibold">{L()==="zh"?m.t_zh:m.t_en}</span><span className="text-xs text-stone-400">{L()==="zh"?m.d_zh:m.d_en}</span></div>
-                <p className="text-xs text-stone-400 ml-8">{L()==="zh"?m.desc_zh:m.desc_en}</p>
+              <div key={m.id} onClick={()=>setMode(m.id)} tabIndex={0} className={`cursor-pointer rounded-xl p-4 transition-all focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 ${mode===m.id?"border-2 border-stone-800 bg-stone-50":"border border-stone-200 bg-white"}`}>
+                <div className="flex items-center gap-2 mb-1"><span className="text-xl">{m.icon}</span><span className="font-display font-semibold">{L()==="zh"?m.t_zh:m.t_en}</span><span className="text-xs text-stone-500">{L()==="zh"?m.d_zh:m.d_en}</span></div>
+                <p className="text-xs text-stone-500 ml-8">{L()==="zh"?m.desc_zh:m.desc_en}</p>
               </div>
             ))}
           </div>
         </div>
 
-        <button onClick={()=>selectMode(mode)} className="cursor-pointer w-full rounded-xl py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">
+        <button onClick={()=>selectMode(mode)} className="cursor-pointer w-full rounded-xl py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
           {L()==="zh"?"开始评估 →":"Start Assessment →"}
         </button>
       </div>
@@ -355,7 +368,7 @@ export default function ReadPage() {
   const chatMsgs = messages.filter(m => m.content !== summary); // exclude summary from chat
 
   return (
-    <div className="px-6" style={{zoom:1.1}}>
+    <div className="px-6">
       {/* Error banner */}
       {error && (
         <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>
@@ -365,12 +378,33 @@ export default function ReadPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <span className="font-display font-bold text-xl">{chapterTitle || (L()==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`)}</span>
-          {total > 0 && <span className="text-stone-400">/ {total}</span>}
+          {total > 0 && <span className="text-stone-500">/ {total}</span>}
           <div className="h-2.5 w-32 rounded-full bg-stone-100 hidden sm:block"><div className="h-2.5 rounded-full bg-gradient-to-r from-amber-500 to-amber-300 transition-all" style={{width:`${progress}%`}}/></div>
         </div>
-        <div className="flex gap-3 text-xs text-stone-400">
-          <button onClick={()=>router.push(`/read/${book_id}/toc`)} className="hover:text-stone-800">{L()==="zh"?"目录":"TOC"}</button>
-          <span>{mode==="quick"?(L()==="zh"?"快速":"Quick"):mode==="balanced"?(L()==="zh"?"交互":"Mixed"):(L()==="zh"?"深度":"Deep")}</span>
+        <div className="flex gap-3 text-xs text-stone-500 items-center">
+          <button onClick={()=>router.push(`/read/${book_id}/toc`)} className="hover:text-stone-800 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{L()==="zh"?"目录":"TOC"}</button>
+          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+            mode==="quick"?"bg-amber-100 text-amber-700":
+            
+            "bg-purple-100 text-purple-700"
+          }`}>
+            {mode==="quick"?(L()==="zh"?"快速":"Quick"):(L()==="zh"?"深度":"Deep")}
+          </span>
+          <div className="relative">
+            <button onClick={()=>setShowModeSwitch(!showModeSwitch)} className="hover:text-stone-800 underline focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{L()==="zh"?"切换模式":"Switch"}</button>
+            {showModeSwitch && (
+              <div className="absolute right-0 top-6 z-20 bg-white border border-stone-200 rounded-xl shadow-lg p-1.5 min-w-[100px]">
+                {[{id:"quick",zh:"快速",en:"Quick"},{id:"deep",zh:"深度",en:"Deep"}].map(m=>(
+                  <button key={m.id} onClick={()=>switchMode(m.id)}
+                    className={`block w-full text-left px-3 py-1.5 rounded-lg text-xs whitespace-nowrap focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 ${
+                      mode===m.id?"bg-stone-100 text-stone-800":"text-stone-500 hover:bg-stone-50"
+                    }`}>
+                    {L()==="zh"?m.zh:m.en}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -379,32 +413,32 @@ export default function ReadPage() {
         <div className="w-48 shrink-0 hidden lg:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-3 max-h-[70vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-xs font-semibold text-stone-400 uppercase tracking-wide">{L()==="zh"?"本章 Wiki":"Chapter Wiki"}</div>
+              <div className="text-xs font-semibold text-stone-500 uppercase tracking-wide">{L()==="zh"?"本章 Wiki":"Chapter Wiki"}</div>
               {wikiChecklist.length > 0 && (
-                <div className="text-[10px] text-stone-400">{wikiChecklist.filter((w:any) => w.status === "done").length}/{wikiChecklist.length} {L()==="zh"?"已掌握":"done"}</div>
+                <div className="text-[10px] text-stone-500">{wikiChecklist.filter((w:any) => w.status === "done").length}/{wikiChecklist.length} {L()==="zh"?"已掌握":"done"}</div>
               )}
             </div>
             {wikiChecklist.length > 0 ? wikiChecklist.map((w: any) => (
               <div key={w.id}
                 className={`text-xs px-2 py-1 rounded mb-0.5 ${
-                  w.status === "done" ? "text-stone-300 line-through" :
+                  w.status === "done" ? "text-stone-400 line-through" :
                   w.id === currentWikiId || w.status === "active" ? "bg-stone-900 text-white" :
                   "text-stone-500"
                 }`}>
                 {w.status === "done" ? "✓ " : w.id === currentWikiId || w.status === "active" ? "● " : "○ "}{w.name}
               </div>
-            )) : <div className="text-xs text-stone-400">
+            )) : <div className="text-xs text-stone-500">
               {status==="reading" ? (L()==="zh"?"暂无 Wiki，请先在书架点击\"AI帮你读\"":"No wiki yet. Click \"AI Read\" on Bookshelf") : (L()==="zh"?"开始导读后显示":"Shown after reading starts")}
             </div>}
-            <button onClick={()=>{if(!streaming)sendMsg("/next");}} disabled={streaming} className="mt-3 w-full text-xs py-1 rounded border border-stone-200 text-stone-400 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed">{L()==="zh"?"跳过本章 →":"Skip Chapter →"}</button>
+            <button onClick={()=>{if(!streaming)sendMsg("/next");}} disabled={streaming} className="mt-3 w-full text-xs py-1 rounded border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{L()==="zh"?"跳过本章 →":"Skip Chapter →"}</button>
           </div>
         </div>
 
         {/* CENTER: Reading Material */}
-        <div className="w-80 shrink-0 hidden md:block">
+        <div className="w-96 shrink-0 hidden md:block">
           <div className="sticky top-20 rounded-xl border border-stone-200 bg-white p-4 max-h-[70vh] overflow-y-auto">
-            <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">{mode==="deep"?(L()==="zh"?"原文":"Original Text"):(L()==="zh"?"阅读材料":"Reading Material")}</div>
-            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap" dangerouslySetInnerHTML={readingMaterial ? sanitizedMD(readingMaterial) : {__html: `<span class="text-stone-400">${L()==="zh"?"对话开始后，AI 生成的阅读材料会出现在这里":"Reading material will appear here once the conversation starts"}</span>`}} />
+            <div className="text-xs font-semibold text-stone-500 mb-2 uppercase tracking-wide">{mode==="deep"?(L()==="zh"?"原文":"Original Text"):(L()==="zh"?"阅读材料":"Reading Material")}</div>
+            <div className="text-sm leading-relaxed text-stone-600 whitespace-pre-wrap" dangerouslySetInnerHTML={readingMaterial ? sanitizedMD(readingMaterial) : {__html: `<span class="text-stone-500">${L()==="zh"?"对话开始后，AI 生成的阅读材料会出现在这里":"Reading material will appear here once the conversation starts"}</span>`}} />
           </div>
         </div>
 
@@ -414,18 +448,18 @@ export default function ReadPage() {
             <div className="rounded-2xl border border-stone-200 bg-white p-6 text-center">
               <p className="text-sm text-red-500 mb-4">{assessmentError}</p>
               <button onClick={() => sendMsg(L()==="zh"?"开始评估":"Start assessment", true)}
-                className="cursor-pointer rounded-xl px-6 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">
+                className="cursor-pointer rounded-xl px-6 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
                 {L()==="zh"?"重新开始评估":"Retry Assessment"}
               </button>
             </div>
           ) : status === "assessment" && assessmentQ ? (
             <div className="rounded-2xl border border-stone-200 bg-white p-6">
-              <div className="text-xs text-stone-400 mb-1 uppercase tracking-wide">{L()==="zh"?"了解你的阅读背景":"Learning your background"}</div>
+              <div className="text-xs text-stone-500 mb-1 uppercase tracking-wide">{L()==="zh"?"了解你的阅读背景":"Learning your background"}</div>
               <h3 className="font-semibold text-lg text-stone-800 mb-6">{assessmentQ.question}</h3>
               <div className="space-y-2">
                 {assessmentQ.options.map((opt, i) => (
                   <button key={i} onClick={() => { setAssessmentQ(null); sendMsg(opt.label); }}
-                    className="w-full text-left cursor-pointer rounded-xl p-4 border border-stone-200 hover:border-stone-400 hover:bg-stone-50 transition-colors text-sm text-stone-700">
+                    className="w-full text-left cursor-pointer rounded-xl p-4 border border-stone-200 hover:border-stone-400 hover:bg-stone-50 transition-colors text-sm text-stone-700 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
                     {opt.label}
                   </button>
                 ))}
@@ -436,12 +470,12 @@ export default function ReadPage() {
               {assessmentLoading ? (
                 <>
                   <span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin mb-3"></span>
-                  <p className="text-sm text-stone-400">{L()==="zh"?"AI 正在准备问题…":"AI is preparing questions…"}</p>
+                  <p className="text-sm text-stone-500">{L()==="zh"?"AI 正在准备问题…":"AI is preparing questions…"}</p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-stone-400 mb-3">{L()==="zh"?"点击下方发送按钮开始评估":"Click send to start assessment"}</p>
-                  <button onClick={()=>sendMsg(L()==="zh"?"开始评估":"Start assessment", true)} disabled={streaming} className="cursor-pointer rounded-xl px-6 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black">{L()==="zh"?"开始评估对话":"Start Assessment"}</button>
+                  <p className="text-sm text-stone-500 mb-3">{L()==="zh"?"点击下方发送按钮开始评估":"Click send to start assessment"}</p>
+                  <button onClick={()=>sendMsg(L()==="zh"?"开始评估":"Start assessment", true)} disabled={streaming} className="cursor-pointer rounded-xl px-6 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{L()==="zh"?"开始评估对话":"Start Assessment"}</button>
                 </>
               )}
             </div>
@@ -454,14 +488,14 @@ export default function ReadPage() {
                   const showFeedback = isAi && aiCount % 3 === 0;
                   return (
                   <div key={i} className={`flex ${m.role==="user"?"justify-end":"justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed ${m.role==="user"?"bg-stone-900 text-white":"bg-stone-50 border border-stone-100"}`}>
                       {m.role==="assistant" ? <span className="whitespace-pre-wrap" dangerouslySetInnerHTML={sanitizedMD(m.content)} /> : <span className="whitespace-pre-wrap">{m.content}</span>}
                     </div>
                     {showFeedback && (
                       <div className="flex items-center gap-1 ml-2 self-end pb-2">
                         <span className="text-xs text-stone-200">|</span>
-                        <button onClick={() => {}} className="text-stone-300 hover:text-amber-500 transition-colors text-xs cursor-pointer">👍</button>
-                        <button onClick={() => {}} className="text-stone-300 hover:text-amber-500 transition-colors text-xs cursor-pointer">👎</button>
+                        <button onClick={() => {}} className="text-stone-400 hover:text-amber-500 transition-colors text-xs cursor-pointer focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👍</button>
+                        <button onClick={() => {}} className="text-stone-400 hover:text-amber-500 transition-colors text-xs cursor-pointer focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👎</button>
                       </div>
                     )}
                   </div>
@@ -471,7 +505,7 @@ export default function ReadPage() {
               {showStartButton && (
                 <div className="flex justify-center p-3 border-t border-stone-100 bg-amber-50">
                   <button onClick={handleStartReading} disabled={streaming}
-                    className="cursor-pointer rounded-xl px-8 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black transition-colors">
+                    className="cursor-pointer rounded-xl px-8 py-3 text-sm font-medium text-white bg-stone-900 hover:bg-black transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
                     {L()==="zh"?"开始阅读本章":"Start Reading"}
                   </button>
                 </div>
@@ -479,20 +513,20 @@ export default function ReadPage() {
               <div className="flex gap-2 p-3 border-t border-stone-100">
                 <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendMsg()}
                   placeholder={L()==="zh"?"写下你的理解…":"Write your understanding…"}
-                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none bg-stone-50 border border-stone-200 focus:border-stone-400"
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none bg-stone-50 border border-stone-200 focus:border-stone-400 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2"
                   disabled={streaming}/>
-                <button onClick={()=>sendMsg()} disabled={streaming} className={`cursor-pointer rounded-xl px-5 py-2.5 text-sm font-medium text-white ${streaming?"bg-stone-400":"bg-stone-900 hover:bg-black"}`}>{streaming?"…":(L()==="zh"?"发送":"Send")}</button>
+                <button onClick={()=>sendMsg()} disabled={streaming} className={`cursor-pointer rounded-xl px-5 py-2.5 text-sm font-medium text-white focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 ${streaming?"bg-stone-400":"bg-stone-900 hover:bg-black"}`}>{streaming?"…":(L()==="zh"?"发送":"Send")}</button>
               </div>
             </div>
           )}
         </div>
       </div>
       {wikiSelection && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl p-6 w-[480px] max-h-[75vh] overflow-y-auto shadow-2xl">
             <div className="mb-5">
               <h3 className="font-bold text-xl text-stone-800 mb-1">{L()==="zh"?`本章 ${(wikiSelection.wikis?.length||0)+(wikiSelection.concepts?.length||0)} 个概念已沉淀`:`${(wikiSelection.wikis?.length||0)+(wikiSelection.concepts?.length||0)} Concepts Merged`}</h3>
-              <p className="text-sm text-stone-400">{L()==="zh"?"勾选要导入 Wiki 的概念，未勾选的会被丢弃":"Check concepts to import into your Wiki. Unchecked will be discarded."}</p>
+              <p className="text-sm text-stone-500">{L()==="zh"?"勾选要导入 Wiki 的概念，未勾选的会被丢弃":"Check concepts to import into your Wiki. Unchecked will be discarded."}</p>
             </div>
             <div className="space-y-1.5">
               {(wikiSelection.wikis || []).map((w:any,i:number)=>{
@@ -502,29 +536,29 @@ export default function ReadPage() {
                   "bg-amber-50 text-amber-700";
                 return (
                   <label key={i} className="flex items-start gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer border border-transparent hover:border-stone-200 transition-all">
-                    <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900" data-wiki-index={i}/>
+                    <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" data-wiki-index={i}/>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-medium text-stone-800">{w.name}</span>
                         <span className={"text-[10px] px-1.5 py-0.5 rounded-full "+typeColor}>{w.type || w.entry_type || "concept"}</span>
                       </div>
-                      <div className="text-xs text-stone-400 line-clamp-2">{w.content?.substring(0,120)}</div>
+                      <div className="text-xs text-stone-500 line-clamp-2">{w.content?.substring(0,120)}</div>
                     </div>
                   </label>
                 );
               })}
               {(wikiSelection.concepts || []).map((c:any,i:number)=>(
                 <label key={`c${i}`} className="flex items-start gap-3 p-3 rounded-xl hover:bg-stone-50 cursor-pointer border border-transparent hover:border-stone-200 transition-all">
-                  <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900" data-concept-index={i}/>
+                  <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 accent-stone-900 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" data-concept-index={i}/>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-stone-800 mb-0.5">{c.name}</div>
-                    <div className="text-xs text-stone-400 line-clamp-2">{c.definition?.substring(0,120)}</div>
+                    <div className="text-xs text-stone-500 line-clamp-2">{c.definition?.substring(0,120)}</div>
                   </div>
                 </label>
               ))}
             </div>
             <div className="flex gap-3 mt-5 pt-4 border-t border-stone-100">
-              <button onClick={()=>setWikiSelection(null)} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm text-stone-500 hover:text-stone-700 border border-stone-200 hover:border-stone-300 flex-1 transition-colors">{L()==="zh"?"取消":"Cancel"}</button>
+              <button onClick={()=>setWikiSelection(null)} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm text-stone-500 hover:text-stone-700 border border-stone-200 hover:border-stone-300 flex-1 transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{L()==="zh"?"取消":"Cancel"}</button>
               <button onClick={(e) => {
                 const checked: any[] = [];
                 e.currentTarget.closest('.bg-white')?.querySelectorAll('input:checked').forEach((cb: any) => {
@@ -534,7 +568,7 @@ export default function ReadPage() {
                   if (ci !== undefined && wikiSelection.concepts) checked.push(wikiSelection.concepts[parseInt(ci)]);
                 });
                 if (checked.length > 0) batchSave(checked);
-              }} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm font-medium text-white bg-stone-900 hover:bg-black flex-1 transition-colors">{L()==="zh"?"确认导入":"Import"}</button>
+              }} className="cursor-pointer rounded-xl py-2.5 px-4 text-sm font-medium text-white bg-stone-900 hover:bg-black flex-1 transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{L()==="zh"?"确认导入":"Import"}</button>
             </div>
           </div>
         </div>

@@ -6,11 +6,38 @@ import logging
 import httpx
 from openai import AsyncOpenAI
 from app.config import settings
+from app.log_utils import get_request_id
 
 logger = logging.getLogger(__name__)
 
 # ⚠️ 切换模型只需改 .env 中的 LLM_MODEL，或运行时传 model 参数
 _client: AsyncOpenAI | None = None
+
+
+def _log_llm_usage(
+    request_id: str,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    stream: bool = False,
+) -> None:
+    """Emit a structured JSON log entry for LLM token usage."""
+    if prompt_tokens is None or completion_tokens is None:
+        return
+    cost_prompt = prompt_tokens * (settings.llm_cost_prompt_per_1m / 1_000_000)
+    cost_completion = completion_tokens * (settings.llm_cost_completion_per_1m / 1_000_000)
+    logger.info(
+        "llm_call",
+        extra={
+            "request_id": request_id,
+            "event": "llm_call",
+            "model": model,
+            "stream": stream,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "estimated_cost_usd": round(cost_prompt + cost_completion, 6),
+        },
+    )
 
 
 def get_client() -> AsyncOpenAI:
@@ -36,9 +63,10 @@ async def chat_stream(
     """
     if timeout is None:
         timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
+    model_name = model or settings.llm_model
     client = get_client()
     stream = await client.chat.completions.create(
-        model=model or settings.llm_model,
+        model=model_name,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -54,6 +82,13 @@ async def chat_stream(
             if delta.content:
                 yield delta.content
     if usage:
+        _log_llm_usage(
+            request_id=get_request_id(),
+            model=model_name,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            stream=True,
+        )
         logger.debug("LLM stream usage: prompt_tokens=%s, completion_tokens=%s",
                      usage.prompt_tokens, usage.completion_tokens)
 
@@ -68,16 +103,26 @@ async def chat(
     """非流式对话 —— 用于概念提取等不需要流式输出的场景"""
     if timeout is None:
         timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
+    model_name = model or settings.llm_model
     client = get_client()
     response = await client.chat.completions.create(
-        model=model or settings.llm_model,
+        model=model_name,
         messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
     )
+    usage = response.usage
+    if usage:
+        _log_llm_usage(
+            request_id=get_request_id(),
+            model=model_name,
+            prompt_tokens=usage.prompt_tokens,
+            completion_tokens=usage.completion_tokens,
+            stream=False,
+        )
     logger.debug("LLM chat usage: prompt_tokens=%s, completion_tokens=%s",
-                 response.usage.prompt_tokens, response.usage.completion_tokens)
+                 usage.prompt_tokens, usage.completion_tokens)
     return response.choices[0].message.content or ""
 
 

@@ -21,16 +21,16 @@ function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => 
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in" onClick={onClose}>
       <div className="bg-white rounded-2xl p-6 w-80 shadow-xl" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold mb-4 text-[#1d1d1f]">{lang === "zh" ? "反馈" : "Feedback"}</h3>
+        <h3 className="font-semibold mb-4 text-ink">{lang === "zh" ? "反馈" : "Feedback"}</h3>
         {sent ? (
           <p className="text-sm text-green-600 text-center py-8">{lang === "zh" ? "感谢反馈！" : "Thanks!"}</p>
         ) : (
           <>
-            <textarea className="w-full border border-[#d2d2d7] rounded-lg p-3 text-sm mb-3 h-28 resize-none placeholder:text-[#86868b]" placeholder={lang === "zh" ? "遇到了什么问题？" : "What went wrong?"} value={msg} onChange={e => setMsg(e.target.value)} />
-            <input className="w-full border border-[#d2d2d7] rounded-lg p-2 text-sm mb-4 placeholder:text-[#86868b]" placeholder={lang === "zh" ? "联系方式（选填）" : "Contact (optional)"} value={contact} onChange={e => setContact(e.target.value)} />
-            <button onClick={submit} className="w-full rounded-full bg-[#1d1d1f] text-white py-2 text-sm font-medium hover:bg-black transition-colors">{lang === "zh" ? "提交" : "Submit"}</button>
+            <textarea className="w-full border border-border rounded-lg p-3 text-sm mb-3 h-28 resize-none placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" placeholder={lang === "zh" ? "遇到了什么问题？" : "What went wrong?"} value={msg} onChange={e => setMsg(e.target.value)} />
+            <input className="w-full border border-border rounded-lg p-2 text-sm mb-4 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" placeholder={lang === "zh" ? "联系方式（选填）" : "Contact (optional)"} value={contact} onChange={e => setContact(e.target.value)} />
+            <button onClick={submit} className="w-full rounded-xl bg-ink text-white py-2 text-sm font-medium hover:bg-black transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{lang === "zh" ? "提交" : "Submit"}</button>
           </>
         )}
       </div>

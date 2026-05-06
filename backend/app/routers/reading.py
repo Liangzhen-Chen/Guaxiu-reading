@@ -306,6 +306,10 @@ async def reading_chat(
         language_instruction=lang_instruction,
     )
 
+    import logging
+    logger = logging.getLogger("xiugua.reading")
+    logger.info("P4 call: mode=%s book=%s chapter=%d lang=%s", mode, book.id, chapter, language)
+
     system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}"}]
     messages = system_msgs + history
 
@@ -313,7 +317,7 @@ async def reading_chat(
     async def generate():
         # Collect full response from AI
         full_response = ""
-        async for token in chat_stream(messages, temperature=0.7, max_tokens=4096, timeout=httpx.Timeout(30.0, read=120.0)):
+        async for token in chat_stream(messages, temperature=0.5, max_tokens=4096, timeout=httpx.Timeout(30.0, read=120.0)):
             full_response += token
 
         # Parse JSON response

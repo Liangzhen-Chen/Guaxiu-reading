@@ -36,13 +36,13 @@ export default function RegisterPage() {
 
   return (
     <div className="max-w-sm mx-auto mt-16">
-      <h1 className="font-display text-2xl font-bold text-center mb-10 text-[#1d1d1f]">{t("register", lang)}</h1>
+      <h1 className="font-display text-2xl font-bold text-center mb-10 text-ink">{t("register", lang)}</h1>
       {err && <p className="text-sm text-red-500 text-center mb-4">{err}</p>}
-      <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-4 placeholder:text-[#86868b]" placeholder={t("email", lang)} value={email} onChange={e => setEmail(e.target.value)} />
-      <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-4 placeholder:text-[#86868b]" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} />
-      <input className="w-full border-b border-[#d2d2d7] px-1 py-3 text-sm mb-8 placeholder:text-[#86868b]" type="password" placeholder={t("confirmPassword", lang)} value={pwd2} onChange={e => setPwd2(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
-      <button onClick={submit} className="cursor-pointer w-full rounded-full bg-[#1d1d1f] text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3">{t("register", lang)}</button>
-      <div className="text-center text-sm text-[#86868b]">{t("hasAccount", lang)}<a href="/login" className="text-[#1d1d1f] underline">{t("login", lang)}</a></div>
+      <input className="w-full border-b border-border px-1 py-3 text-sm mb-4 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" placeholder={t("email", lang)} value={email} onChange={e => setEmail(e.target.value)} />
+      <input className="w-full border-b border-border px-1 py-3 text-sm mb-4 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} />
+      <input className="w-full border-b border-border px-1 py-3 text-sm mb-8 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" type="password" placeholder={t("confirmPassword", lang)} value={pwd2} onChange={e => setPwd2(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
+      <button onClick={submit} className="cursor-pointer w-full rounded-xl bg-ink text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{t("register", lang)}</button>
+      <div className="text-center text-sm text-ink-soft">{t("hasAccount", lang)}<a href="/login" className="text-ink underline focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{t("login", lang)}</a></div>
     </div>
   );
 }

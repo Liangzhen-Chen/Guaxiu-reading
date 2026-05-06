@@ -14,15 +14,15 @@ export function Nav() {
 
   return (
     <nav className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-      <Link href="/" className="font-display text-lg font-bold text-[#1d1d1f] no-underline">朽瓜 <span className="font-normal text-[#86868b] text-sm">Xiugua</span></Link>
-      <div className="flex gap-5 text-sm text-[#86868b] items-center">
-        {show && <Link href="/books" className="hover:text-[#1d1d1f]">{t("bookshelf", lang)}</Link>}
-        {show && <Link href="/wiki" className="hover:text-[#1d1d1f]">{t("wiki", lang)}</Link>}
-        {show && <Link href="/profile" className="hover:text-[#1d1d1f]">{lang === "zh" ? "我的" : "Me"}</Link>}
-        {show && <button onClick={() => { localStorage.removeItem("token"); window.location.href = "/"; }} className="hover:text-[#1d1d1f] text-[#86868b]">{lang === "zh" ? "退出" : "Out"}</button>}
-        {!show && p !== "/login" && <Link href="/login" className="hover:text-[#1d1d1f]">{t("login", lang)}</Link>}
-        <button onClick={() => { if (lang !== "zh") { localStorage.setItem("lang", "zh"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded ${lang === "zh" ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]"}`}>中文</button>
-        <button onClick={() => { if (lang !== "en") { localStorage.setItem("lang", "en"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded ${lang === "en" ? "bg-[#1d1d1f] text-white" : "text-[#86868b] hover:text-[#1d1d1f]"}`}>EN</button>
+      <Link href="/" className="font-display text-lg font-bold text-ink no-underline">朽瓜 <span className="font-normal text-ink-soft text-sm">Xiugua</span></Link>
+      <div className="flex gap-5 text-sm text-ink-soft items-center">
+        {show && <Link href="/books" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{t("bookshelf", lang)}</Link>}
+        {show && <Link href="/wiki" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{t("wiki", lang)}</Link>}
+        {show && <Link href="/profile" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{lang === "zh" ? "我的" : "Me"}</Link>}
+        {show && <button onClick={() => { localStorage.removeItem("token"); window.location.href = "/"; }} className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{lang === "zh" ? "退出" : "Out"}</button>}
+        {!show && p !== "/login" && <Link href="/login" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{t("login", lang)}</Link>}
+        <button onClick={() => { if (lang !== "zh") { localStorage.setItem("lang", "zh"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "zh" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>中文</button>
+        <button onClick={() => { if (lang !== "en") { localStorage.setItem("lang", "en"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "en" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>EN</button>
       </div>
     </nav>
   );

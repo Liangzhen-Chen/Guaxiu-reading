@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     book_storage_path: str = str(BASE_DIR / "data" / "books")
     max_upload_size_mb: int = 50
 
+    # ── LLM Cost Tracking ──
+    # DeepSeek Flash 定价（USD per 1M tokens），用于日志记录
+    llm_cost_prompt_per_1m: float = 0.4
+    llm_cost_completion_per_1m: float = 1.0
+
     # ── Google Books API ──
     google_books_api_key: str = ""
 

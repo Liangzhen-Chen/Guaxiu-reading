@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@theme {
+  --color-ink: #1d1d1f;
+  --color-ink-soft: #6e6e73;
+  --color-ink-muted: #aeaeb2;
+  --color-border: #e5e5ea;
+  --color-amber-deep: #8B6914;
+  --animate-fade-in: fadeIn .3s ease;
+}
+
 :root {
   --ink: #1d1d1f;
   --ink-soft: #6e6e73;
@@ -24,7 +33,6 @@ body {
 }
 
 .font-display { font-family: "Noto Serif SC", "PingFang SC", serif; }
-input:focus { outline: none; }
 
 /* Cards */
 .card {
@@ -32,19 +40,18 @@ input:focus { outline: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  transition: all .2s ease;
 }
-.card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+.card:hover { box-shadow: var(--shadow); }
 
 /* Buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 10px 20px; border-radius: 100px;
+  padding: 10px 20px; border-radius: 12px;
   font-size: 14px; font-weight: 500; cursor: pointer;
-  transition: all .15s ease; border: none;
+  border: none;
 }
 .btn-primary { background: var(--ink); color: #fff; }
-.btn-primary:hover { background: #000; transform: scale(1.02); }
+.btn-primary:hover { background: #000; }
 .btn-ghost { background: transparent; color: var(--ink-soft); }
 .btn-ghost:hover { background: rgba(0,0,0,.04); }
 
@@ -53,19 +60,30 @@ input:focus { outline: none; }
   width: 100%; padding: 10px 16px;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
   font-size: 14px; background: #fff;
-  transition: border-color .15s;
 }
 .input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(0,0,0,.06); }
 
 /* Progress */
 .progress { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-.progress-bar { height: 100%; background: var(--ink); border-radius: 2px; transition: width .6s ease; }
+.progress-bar { height: 100%; background: var(--ink); border-radius: 2px; }
 
-/* Animations */
+/* Keyframes (always defined) */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-.animate-in { animation: fadeIn .3s ease; }
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Reduced motion: animations, spinners, and transforms only for users who prefer motion */
+@media (prefers-reduced-motion: no-preference) {
+  .card { transition: all .2s ease; }
+  .card:hover { transform: translateY(-1px); }
+  .btn { transition: all .15s ease; }
+  .btn-primary:hover { transform: scale(1.02); }
+  .btn-ghost:hover { background: rgba(0,0,0,.04); }
+  .input { transition: border-color .15s; }
+  .progress-bar { transition: width .6s ease; }
+  .animate-fade-in { animation: fadeIn .3s ease; }
+  .animate-in { animation: fadeIn .3s ease; }
+}
