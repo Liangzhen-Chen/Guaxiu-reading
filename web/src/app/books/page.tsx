@@ -67,13 +67,19 @@ export default function BooksPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: f.name, file_type: f.name.split(".").pop() || "epub" }),
       });
+      // api() returns {ok:false,status:0} on network errors
+      if (presignRes.status === 0) {
+        setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
+        alert("网络连接失败，请检查网络后重试");
+        return;
+      }
       if (!presignRes.ok) {
-        const msg = await presignRes.text().catch(() => "");
+        const msg = await (presignRes as Response).text().catch(() => "");
         setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
         alert("上传配置失败: " + (msg || "请稍后重试"));
         return;
       }
-      const { upload_url, key } = await presignRes.json();
+      const { upload_url, key } = await (presignRes as Response).json();
 
       // Step 2: 直传 COS（带进度条）
       const xhr = new XMLHttpRequest();
@@ -98,11 +104,16 @@ export default function BooksPage() {
         body: JSON.stringify({ key, filename: f.name, title: f.name.replace(/\.[^.]+$/, "") }),
       });
       if (importRes.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      if (importRes.status === 0) {
+        setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
+        alert("网络连接失败，文件已上传但导入失败，请刷新页面重试");
+        return;
+      }
       if (importRes.ok) {
         setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load();
       } else {
         setUpStatus("error");
-        try { const d = JSON.parse(await importRes.text()); alert(d.detail || "导入失败"); } catch(_) { alert("导入失败"); }
+        try { const d = JSON.parse(await (importRes as Response).text()); alert(d.detail || "导入失败"); } catch(_) { alert("导入失败"); }
       }
       setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
       resetInput();
