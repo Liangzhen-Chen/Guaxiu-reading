@@ -325,11 +325,8 @@ async def reading_chat(
             parsed = {"ai_response": full_response, "current_wiki": {"id": current_wiki_id, "name": ""}, "reading_material": "", "wiki_transition": False, "transition_message": ""}
             ai_text = full_response
 
-        # Stream the display text to the user
-        yield ai_text
-        # Append wiki metadata for frontend
-        yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))}-->"
-
+        # D3: Save conversation to DB FIRST, then yield to user
+        all_done = False
         db2 = async_session()
         try:
             db2.add(Conversation(
@@ -363,7 +360,6 @@ async def reading_chat(
                     or (not wiki_checklist and (progress2.total_rounds or 0) > 10)
                 )
                 if all_done:
-                    yield "\n\n[CHAPTER_END]"
                     total = book.chapter_count or 1
                     if chapter >= total:
                         progress2.status = "completed"
@@ -378,6 +374,13 @@ async def reading_chat(
             await db2.commit()
         finally:
             await db2.close()
+
+        # Yield to user after DB write succeeded
+        yield ai_text
+        yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))}-->"
+
+        if all_done:
+            yield "\n\n<!--CHAPTER_END-->"
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
 
@@ -464,13 +467,7 @@ async def resume_reading(
         try:
             if book.category:
                 framework = json.loads(book.category)
-                def _t(node):
-                    items = []
-                    if isinstance(node, dict):
-                        if node.get("thesis"): items.append(node["thesis"])
-                        for b in node.get("branches", []): items.extend(_t(b))
-                    return items
-                resp.chapter_concepts = _t(framework.get("argument_tree", {}))
+                resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
         except: pass
         return resp
 
@@ -515,13 +512,7 @@ async def resume_reading(
         try:
             if book.category:
                 framework = json.loads(book.category)
-                def _theses2(node):
-                    items = []
-                    if isinstance(node, dict):
-                        if node.get("thesis"): items.append(node["thesis"])
-                        for b in node.get("branches", []): items.extend(_theses2(b))
-                    return items
-                resp.chapter_concepts = _theses2(framework.get("argument_tree", {}))
+                resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
         except: pass
     return resp
 
@@ -690,9 +681,15 @@ def _get_chapter_markers(book) -> list | None:
     return None
 
 
-def _is_chapter_end(response: str) -> bool:
-    markers = ["本章完成", "本章结束", "进入下一章", "章节总结", "本章用户理解的所有概念"]
-    return any(m in response for m in markers)
+def _extract_theses(node) -> list:
+    """Recursively extract thesis statements from an argument tree node."""
+    items = []
+    if isinstance(node, dict):
+        if node.get("thesis"):
+            items.append(node["thesis"])
+        for b in node.get("branches", []):
+            items.extend(_extract_theses(b))
+    return items
 
 
 def async_session():
