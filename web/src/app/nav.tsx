@@ -5,9 +5,10 @@ import Link from "next/link";
 import { useLang, t } from "./lang";
 
 export function Nav() {
-  const [show, setShow] = useState(false);
   const p = usePathname();
-  const { lang, setLang } = useLang();
+  const { lang } = useLang();
+  const hasToken = typeof window !== "undefined" && !!localStorage.getItem("token");
+  const [show, setShow] = useState(hasToken);
 
   useEffect(() => { setShow(!!localStorage.getItem("token")); }, [p]);
 

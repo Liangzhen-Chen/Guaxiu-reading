@@ -16,21 +16,27 @@ export default function ProfilePage() {
   useEffect(() => { if (!T()) { router.push("/login"); return; } load(); }, []);
 
   async function load() {
-    const res = await fetch(API + "/api/auth/me", { headers: { Authorization: `Bearer ${T()}` } });
-    if (res.ok) { const d = await res.json(); setUser(d); setName(d.display_name || ""); }
-    else { localStorage.removeItem("token"); router.push("/login"); }
+    try {
+      const res = await fetch(API + "/api/auth/me", { headers: { Authorization: `Bearer ${T()}` }, signal: AbortSignal.timeout(15000) });
+      if (res.ok) { const d = await res.json(); setUser(d); setName(d.display_name || ""); }
+      else if (res.status === 401) { localStorage.removeItem("token"); router.push("/login"); }
+    } catch {}
   }
 
   async function saveName() {
     setSaving(true);
-    await fetch(API + "/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ display_name: name }) });
+    try {
+      await fetch(API + "/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ display_name: name }), signal: AbortSignal.timeout(15000) });
+    } catch {}
     setSaving(false);
   }
 
   async function uploadAvatar(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
     const fd = new FormData(); fd.append("file", f);
-    await fetch(API + "/api/auth/avatar", { method: "POST", headers: { Authorization: `Bearer ${T()}` }, body: fd });
+    try {
+      await fetch(API + "/api/auth/avatar", { method: "POST", headers: { Authorization: `Bearer ${T()}` }, body: fd, signal: AbortSignal.timeout(30000) });
+    } catch {}
     load();
   }
 

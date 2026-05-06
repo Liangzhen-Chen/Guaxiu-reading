@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { track } from "../track";
 
 import { API } from "../config";
@@ -11,18 +11,34 @@ interface Entry {
   book_title: string | null;
 }
 
+let reqId = 0;
+
 export default function WikiPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
   const token = getToken();
 
   useEffect(() => { track("page_view"); if (token) load(); }, []);
 
   async function load(q?: string) {
-    const url = new URL(API + "/api/wiki");
-    if (q) url.searchParams.set("search", q);
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
-    if (res.ok) setEntries(await res.json());
+    setError("");
+    const params = new URLSearchParams();
+    if (q) params.set("search", q);
+    params.set("limit", "20");
+    const thisReq = ++reqId;
+    try {
+      const res = await fetch(API + "/api/wiki?" + params.toString(), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (thisReq !== reqId) return; // discard stale results
+      if (res.status === 401) { localStorage.removeItem("token"); window.location.href = "/login"; return; }
+      if (res.ok) setEntries(await res.json());
+      else setError("加载失败，请稍后重试");
+    } catch {
+      if (thisReq === reqId) setError("网络连接失败，请检查网络");
+    }
   }
 
   if (!token) return <div className="text-center py-24 text-stone-400">请先登录</div>;
@@ -35,6 +51,7 @@ export default function WikiPage() {
           placeholder="搜索概念…" className="flex-1 rounded-lg px-4 py-3 text-sm bg-white border border-stone-200" />
         <button onClick={() => load(search)} className="rounded-lg px-5 py-3 text-sm font-medium text-white bg-stone-900">搜索</button>
       </div>
+      {error && <p className="text-center text-sm text-red-500 mb-4">{error}</p>}
       {entries.length === 0 ? (
         <div className="text-center py-24 text-stone-400">
           <p className="text-lg mb-2">知识库为空</p>
@@ -57,7 +74,7 @@ export default function WikiPage() {
                 {e.book_title && (
                   <span className="text-xs text-stone-400 truncate max-w-[200px]">{e.book_title}</span>
                 )}
-                {e.chapter_index && <span className="text-xs text-stone-400">· 第{e.chapter_index}章</span>}
+                {e.chapter_index != null && <span className="text-xs text-stone-400">· 第{e.chapter_index}章</span>}
               </div>
               <h3 className="font-chinese text-lg font-semibold mb-1">{e.concept_name}</h3>
               <p className="text-sm text-stone-500 leading-relaxed">{e.ai_definition}</p>

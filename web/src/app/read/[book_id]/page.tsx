@@ -54,13 +54,15 @@ export default function ReadPage() {
     const t = setInterval(async () => {
       pollCount.current++;
       // Only poll wiki/concepts, don't overwrite user's mode selection
-      const res = await fetch(`${API}/api/reading/resume/${book_id}`, { headers: { Authorization: `Bearer ${T()}` } });
-      if (res.ok) {
-        const d = await res.json();
-        if (d.wiki_checklist?.length) { setWikiChecklist(d.wiki_checklist); }
-        if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
-        if (d.mode && !mode) setMode(d.mode);  // only set if not already chosen
-      }
+      try {
+        const res = await fetch(`${API}/api/reading/resume/${book_id}`, { headers: { Authorization: `Bearer ${T()}` }, signal: AbortSignal.timeout(15000) });
+        if (res.ok) {
+          const d = await res.json();
+          if (d.wiki_checklist?.length) { setWikiChecklist(d.wiki_checklist); }
+          if (d.chapter_concepts?.length) { setConcepts(d.chapter_concepts); }
+          if (d.mode && !mode) setMode(d.mode);
+        }
+      } catch {}
     }, 2000);
     return () => clearInterval(t);
   }, [status, concepts.length]);
@@ -106,7 +108,6 @@ export default function ReadPage() {
     const s = d.status === "not_started" ? "select-mode" : d.status;
     setStatus(s);
     if (d.current_chapter > 0) {
-      loadChapterText(d.current_chapter);
       setChapterTitle(L()==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`);
     }
     if (s === "reading" && !started.current) started.current = true;
@@ -118,7 +119,9 @@ export default function ReadPage() {
 
   async function selectMode(m: string) {
     setMode(m);
-    await fetch(`${API}/api/reading/mode`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, mode: m, language: L() }) });
+    try {
+      await fetch(`${API}/api/reading/mode`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, mode: m, language: L() }), signal: AbortSignal.timeout(30000) });
+    } catch {}
     setStatus("assessment");
   }
 
@@ -129,7 +132,7 @@ export default function ReadPage() {
     setStreaming(true);
 
     if (status === "assessment") {
-      setAssessmentLoading(true);
+      setAssessmentLoading(true); try {
       const res = await fetch(`${API}/api/reading/assessment`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
       setAssessmentLoading(false);
       const d = await res.json();
@@ -137,7 +140,6 @@ export default function ReadPage() {
       if (d.assessment_complete) {
         setAssessmentQ(null);
         setStatus("reading");
-        loadChapterText(1);
         loadState();  // sync mode, wiki checklist, chapter from backend
         if (!started.current) started.current = true;
         setShowStartButton(true);
@@ -158,7 +160,8 @@ export default function ReadPage() {
       const isSummary = readingFirstMsg.current;
       readingFirstMsg.current = false;
       if (!silent) setMessages(prev => [...prev, { role: "user", content: text }]);
-      const res = await fetch(`${API}/api/reading/chat`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }) });
+      const res = await fetch(`${API}/api/reading/chat`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` }, body: JSON.stringify({ book_id, message: text }), signal: AbortSignal.timeout(300000) });
+      if (!res.ok) { setStreaming(false); return; }
       const reader = res.body?.getReader();
       if (!reader) { setStreaming(false); return; }
       const decoder = new TextDecoder(); let full = "";

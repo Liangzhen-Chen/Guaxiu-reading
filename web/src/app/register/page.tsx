@@ -14,9 +14,24 @@ export default function RegisterPage() {
     if (!email || !pwd) { setErr(t("fillAll", lang)); return; }
     if (pwd !== pwd2) { setErr(t("passwordMismatch", lang)); return; }
     setErr("");
-    const res = await fetch(`${API}/api/auth/register`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: pwd }) });
-    if (res.ok) { const d = await res.json(); localStorage.setItem("token", d.access_token); router.push("/books"); }
-    else { const d = await res.json(); setErr(d.detail || t("registerFailed", lang)); }
+    try {
+      const res = await fetch(API + "/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pwd }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (res.ok) {
+        const d = await res.json().catch(() => ({} as any));
+        if (d.access_token) { localStorage.setItem("token", d.access_token); router.push("/books"); return; }
+        setErr(t("registerFailed", lang));
+      } else {
+        const d = await res.json().catch(() => ({} as any));
+        setErr(d.detail || t("registerFailed", lang));
+      }
+    } catch {
+      setErr("网络连接失败，请检查网络后重试");
+    }
   }
 
   return (
