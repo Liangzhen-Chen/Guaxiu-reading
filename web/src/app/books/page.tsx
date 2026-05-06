@@ -57,25 +57,66 @@ export default function BooksPage() {
     if (mounted.current) setLoading(false);
   }
 
-  function doUp(e: React.ChangeEvent<HTMLInputElement>) {
+  async function doUp(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]; if (!f) return;
     setUpStatus("uploading"); setUpProgress(0);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", API + "/api/books/upload");
-    xhr.setRequestHeader("Authorization", "Bearer " + T());
-    xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100)); };
-    xhr.onload = async () => {
-      if (xhr.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
-      if (xhr.status === 201) { setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load(); }
-      else {
+    try {
+      // Step 1: 获取 COS 预签名上传 URL
+      const presignRes = await api(API + "/api/books/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: f.name, file_type: f.name.split(".").pop() || "epub" }),
+      });
+      if (!presignRes.ok) {
+        const msg = await presignRes.text().catch(() => "");
+        setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
+        alert("上传配置失败: " + (msg || "请稍后重试"));
+        return;
+      }
+      const { upload_url, key } = await presignRes.json();
+
+      // Step 2: 直传 COS（带进度条）
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = 600000;
+      xhr.open("PUT", upload_url);
+      xhr.setRequestHeader("Content-Type", "application/octet-stream");
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) setUpProgress(Math.round(ev.loaded / ev.total * 100));
+      };
+      await new Promise<void>((resolve, reject) => {
+        xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("上传失败 " + xhr.status));
+        xhr.onerror = () => reject(new Error("网络错误"));
+        xhr.ontimeout = () => reject(new Error("上传超时"));
+        xhr.send(f);
+      });
+
+      // Step 3: 通知后端从 COS 导入
+      setUpProgress(0);
+      const importRes = await api(API + "/api/books/import-cos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, filename: f.name, title: f.name.replace(/\.[^.]+$/, "") }),
+      });
+      if (importRes.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+      if (importRes.ok) {
+        setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load();
+      } else {
         setUpStatus("error");
-        try { const d = JSON.parse(xhr.responseText); alert(d.detail || "上传失败"); } catch(_) { alert("上传失败"); }
+        try { const d = JSON.parse(await importRes.text()); alert(d.detail || "导入失败"); } catch(_) { alert("导入失败"); }
       }
       setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
-    };
-    xhr.onerror = () => { setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); };
-    const fd = new FormData(); fd.append("file", f); fd.append("title", f.name.replace(/\.[^.]+$/, ""));
-    xhr.send(fd);
+      resetInput();
+    } catch (err: any) {
+      setUpStatus("error");
+      alert(err.message || "上传失败，请检查网络后重试");
+      setTimeout(() => setUpStatus(""), 3000);
+      resetInput();
+    }
+  }
+
+  function resetInput() {
+    const el = document.querySelector<HTMLInputElement>('input[type="file"][accept*=".epub"]');
+    if (el) el.value = "";
   }
 
   const [deleting, setDeleting] = useState<string>("");
