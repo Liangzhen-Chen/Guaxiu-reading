@@ -41,7 +41,7 @@ async def batch_create(data: list[dict], db: AsyncSession = Depends(get_db), use
 async def list_entries(
     book_id: uuid.UUID | None = None,
     search: str | None = None,
-    limit: int = Query(default=20, le=100),
+    limit: int = Query(default=50, le=10000),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):

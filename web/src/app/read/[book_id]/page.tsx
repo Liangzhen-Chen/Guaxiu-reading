@@ -395,23 +395,12 @@ export default function ReadPage() {
         if (full.includes("<!--CHAPTER_END")) {
           setReadingMaterial("");
 
-          // P5-19: Auto-save wikis silently, show celebration instead of modal
+          // Show wiki selection modal for user to choose which concepts to import
           const ceMatch = full.match(/<!--CHAPTER_END:([\s\S]*?)-->/);
           const wikiData = ceMatch ? (() => { try { return JSON.parse(ceMatch[1]); } catch { return null; } })() : null;
-
-          const currentRounds = messages.filter(m => m.role === "assistant").length + 1;
           if (wikiData?.wikis?.length) {
-            // Auto-save all wikis silently
-            batchSave(wikiData.wikis).then(() => {
-              // Show celebration with stats (capture rounds before promise)
-              setCelebrationStats({
-                wikiCount: wikiData.wikis.length,
-                chatRounds: currentRounds,
-              });
-              setShowCelebration(true);
-            });
+            setWikiSelection(wikiData);
           } else {
-            // No wikis, try API fetch
             try {
               const wRes = await fetch(`${API}/api/reading/chapter-end`, {
                 method: "POST",
@@ -420,12 +409,7 @@ export default function ReadPage() {
               });
               if (wRes.ok) {
                 const wData = await wRes.json();
-                if (wData.wikis?.length) {
-                  batchSave(wData.wikis).then(() => {
-                    setCelebrationStats({ wikiCount: wData.wikis.length, chatRounds: currentRounds });
-                    setShowCelebration(true);
-                  });
-                }
+                if (wData.wikis?.length) setWikiSelection(wData);
               }
             } catch { /* silent fail */ }
           }
