@@ -475,19 +475,13 @@ export default function Landing() {
             )}
           </p>
 
-          <div className="mt-10 grid gap-6 sm:grid-cols-3 text-center">
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 text-center max-w-lg mx-auto">
             {[
               {
                 label_zh: "独立记录",
                 label_en: "Independent",
                 desc_zh: "每个概念独立存储，不遗漏",
                 desc_en: "Each concept stored independently",
-              },
-              {
-                label_zh: "跨章关联",
-                label_en: "Cross-linked",
-                desc_zh: "概念之间自动建立联系",
-                desc_en: "Auto-linked across chapters",
               },
               {
                 label_zh: "持续生长",
