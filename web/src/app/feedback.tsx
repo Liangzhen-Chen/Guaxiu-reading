@@ -41,12 +41,12 @@ function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => 
 function SatisfactionPopup({ onRate }: { onRate: (ok: boolean) => void }) {
   const { lang } = useLang();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in">
       <div className="bg-white rounded-2xl p-6 w-72 shadow-xl text-center">
-        <p className="text-sm mb-4 text-[#1d1d1f]">{lang === "zh" ? "刚才的回答有帮助吗？" : "Was that response helpful?"}</p>
+        <p className="text-sm mb-4 text-ink">{lang === "zh" ? "刚才的回答有帮助吗？" : "Was that response helpful?"}</p>
         <div className="flex gap-3 justify-center">
-          <button onClick={() => onRate(true)} className="rounded-full bg-[#1d1d1f] text-white px-6 py-2 text-sm font-medium hover:bg-black">👍 {lang === "zh" ? "有用" : "Yes"}</button>
-          <button onClick={() => onRate(false)} className="rounded-full border border-[#d2d2d7] text-[#1d1d1f] px-6 py-2 text-sm font-medium hover:bg-[#f5f5f7]">👎 {lang === "zh" ? "没用" : "No"}</button>
+          <button onClick={() => onRate(true)} className="rounded-xl bg-ink text-white px-6 py-2 text-sm font-medium hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👍 {lang === "zh" ? "有用" : "Yes"}</button>
+          <button onClick={() => onRate(false)} className="rounded-xl border border-border text-ink px-6 py-2 text-sm font-medium hover:bg-[#f5f5f7] focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👎 {lang === "zh" ? "没用" : "No"}</button>
         </div>
       </div>
     </div>
@@ -59,7 +59,7 @@ export function FeedbackButton({ showSatisfaction }: { showSatisfaction?: boolea
 
   return (
     <>
-      <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 text-sm font-medium text-white bg-[#1d1d1f] hover:bg-black rounded-full px-5 py-3 shadow-lg transition-colors">
+      <button onClick={() => setOpen(true)} className="fixed bottom-6 right-6 text-sm font-medium text-white bg-ink hover:bg-black rounded-xl px-5 py-3 shadow-lg transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
         {lang === "zh" ? "💬 反馈" : "💬 Feedback"}
       </button>
       <FeedbackModal open={open} onClose={() => setOpen(false)} lang={lang} />
