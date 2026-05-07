@@ -17,6 +17,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.database import init_db
+from app.limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from app.log_utils import (
     error_log,
     generate_request_id,
@@ -108,7 +111,8 @@ class RequestIDLoggingMiddleware(BaseHTTPMiddleware):
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """添加安全响应头（HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy）"""
+    """添加安全响应头（HSTS, X-Content-Type-Options, X-Frame-Options,
+    Referrer-Policy, Content-Security-Policy）"""
 
     async def dispatch(self, request, call_next):
         response: Response = await call_next(request)
@@ -116,6 +120,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; connect-src 'self' https://api.deepseek.com; "
+            "font-src 'self'; frame-ancestors 'none';"
+        )
         return response
 
 
@@ -143,6 +152,10 @@ app.add_middleware(
 
 # 3. 安全响应头 (innermost)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# 4. SlowAPI 速率限制
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # ── Public endpoints ──

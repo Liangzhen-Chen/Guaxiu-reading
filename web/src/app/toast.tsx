@@ -37,7 +37,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm pointer-events-none">
+    <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 max-w-sm pointer-events-none" aria-live="polite" role="region" aria-label="Notifications">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -46,8 +46,9 @@ export function ToastContainer() {
               ? "bg-red-500 text-white"
               : t.type === "success"
                 ? "bg-green-600 text-white"
-                : "bg-stone-800 text-white"
+                : "bg-ink text-white"
           }`}
+          {...(t.type === "error" ? { role: "alert" } : {})}
         >
           {t.message}
         </div>

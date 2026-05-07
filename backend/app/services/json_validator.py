@@ -112,6 +112,7 @@ async def ai_json_with_retry(
         ValueError after all retries exhausted
     """
     last_raw = ""
+    messages = [*messages]  # shallow copy to avoid mutating the caller's original list
     for attempt in range(retries):
         try:
             raw = await chat_fn(messages, temperature=temperature, max_tokens=max_tokens)

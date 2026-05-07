@@ -1,0 +1,18 @@
+[Unit]
+Description=Xiugua Backend Service
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/xiugua/backend
+EnvironmentFile=/opt/xiugua/backend/.env
+ExecStart=/opt/xiugua/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/xiugua/logs/uvicorn.log
+StandardError=append:/opt/xiugua/logs/uvicorn-error.log
+
+[Install]
+WantedBy=multi-user.target

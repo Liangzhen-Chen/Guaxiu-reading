@@ -12,12 +12,15 @@ export function LangProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    setLang((localStorage.getItem("lang") as Lang) || "zh");
+    const saved = (localStorage.getItem("lang") as Lang) || "zh";
+    setLang(saved);
+    document.documentElement.lang = saved;
     setReady(true);
   }, []);
 
   function switchLang(l: Lang) {
     localStorage.setItem("lang", l);
+    document.documentElement.lang = l;
     setLang(l);
   }
 
@@ -45,10 +48,8 @@ const T: Record<string, Record<Lang, string>> = {
   chapter: { zh: "章", en: "Ch" },
   selectMode: { zh: "选择阅读深度", en: "Choose Depth" },
   quick: { zh: "快速导读", en: "Quick Guide" },
-  balanced: { zh: "原文交互", en: "Interactive" },
   deep: { zh: "深度精读", en: "Deep Read" },
   quickDesc: { zh: "AI讲解为主，15分钟/章", en: "AI-led, 15min/ch" },
-  balancedDesc: { zh: "原文与对话交替，30分钟/章", en: "Mix text & chat, 30min/ch" },
   deepDesc: { zh: "逐段精读，45分钟/章", en: "Paragraph by paragraph, 45min/ch" },
   confirm: { zh: "确认", en: "Confirm" },
   assessment: { zh: "背景评估", en: "Assessment" },

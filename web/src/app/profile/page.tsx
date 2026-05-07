@@ -13,6 +13,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const { lang } = useLang();
 
+  useEffect(() => { document.title = lang === "zh" ? "个人中心 | 朽瓜" : "Profile | Xiugua"; }, [lang]);
   useEffect(() => { if (!T()) { router.push("/login"); return; } load(); }, []);
 
   async function load() {
@@ -40,51 +41,51 @@ export default function ProfilePage() {
     load();
   }
 
-  if (!user) return <div className="text-center py-20 text-stone-500"><span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span></div>;
+  if (!user) return <div className="text-center py-20 text-ink-soft"><span className="inline-block w-6 h-6 border-2 border-ink-muted border-t-ink-soft rounded-full animate-spin"></span></div>;
 
   return (
     <div className="max-w-md mx-auto mt-12">
-      <h1 className="font-display text-2xl font-bold mb-8 text-stone-800">{lang === "zh" ? "个人中心" : "Profile"}</h1>
+      <h1 className="font-display text-2xl font-bold mb-8 text-ink">{lang === "zh" ? "个人中心" : "Profile"}</h1>
 
       {/* Avatar */}
       <div className="flex items-center gap-4 mb-8">
         <label className="cursor-pointer">
-          <div className="w-20 h-20 rounded-full bg-stone-300 flex items-center justify-center text-2xl font-bold text-stone-500 overflow-hidden">
+          <div className="w-20 h-20 rounded-full bg-ink-muted flex items-center justify-center text-2xl font-bold text-ink-soft overflow-hidden">
             {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : (user.display_name || "?")[0].toUpperCase()}
           </div>
           <input type="file" accept="image/*" className="hidden" onChange={uploadAvatar} />
         </label>
         <div>
-          <p className="text-xs text-stone-500">{lang === "zh" ? "点击更换头像" : "Tap to change"}</p>
+          <p className="text-xs text-ink-soft">{lang === "zh" ? "点击更换头像" : "Tap to change"}</p>
         </div>
       </div>
 
       {/* Nickname */}
       <div className="mb-6">
-        <label className="text-xs text-stone-500 mb-1 block">{lang === "zh" ? "昵称" : "Nickname"}</label>
+        <label className="text-xs text-ink-soft mb-1 block">{lang === "zh" ? "昵称" : "Nickname"}</label>
         <div className="flex gap-2">
-          <input className="flex-1 rounded-xl px-4 py-2.5 text-sm border border-stone-200 outline-none focus:border-stone-400 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" value={name} onChange={e => setName(e.target.value)} />
-          <button onClick={saveName} disabled={saving} className="cursor-pointer rounded-xl px-4 py-2.5 text-sm font-medium text-white bg-stone-900 hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{saving ? "…" : lang === "zh" ? "保存" : "Save"}</button>
+          <input className="flex-1 rounded-xl px-4 py-2.5 text-sm border border-border outline-none focus:border-ink-muted focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" value={name} onChange={e => setName(e.target.value)} />
+          <button onClick={saveName} disabled={saving} className="cursor-pointer rounded-xl px-4 py-2.5 text-sm font-medium text-white bg-ink hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{saving ? "…" : lang === "zh" ? "保存" : "Save"}</button>
         </div>
       </div>
 
       {/* Email */}
       <div className="mb-6">
-        <label className="text-xs text-stone-500 mb-1 block">{lang === "zh" ? "邮箱" : "Email"}</label>
-        <p className="text-sm text-stone-600">{user.email}</p>
+        <label className="text-xs text-ink-soft mb-1 block">{lang === "zh" ? "邮箱" : "Email"}</label>
+        <p className="text-sm text-ink-secondary">{user.email}</p>
       </div>
 
       {/* Stats */}
-      <div className="rounded-2xl bg-stone-50 p-5 mb-6">
-        <h3 className="text-sm font-semibold mb-3 text-stone-600">{lang === "zh" ? "账户信息" : "Account"}</h3>
+      <div className="rounded-2xl bg-ink-bg p-5 mb-6">
+        <h3 className="text-sm font-semibold mb-3 text-ink-secondary">{lang === "zh" ? "账户信息" : "Account"}</h3>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div><span className="text-stone-500">{lang === "zh" ? "注册时间" : "Joined"}</span><p className="text-stone-700">{user.created_at?.split("T")[0]}</p></div>
-          <div><span className="text-stone-500">ID</span><p className="text-stone-700 text-xs font-mono">{user.id?.slice(0, 8)}…</p></div>
+          <div><span className="text-ink-soft">{lang === "zh" ? "注册时间" : "Joined"}</span><p className="text-ink-secondary">{user.created_at?.split("T")[0]}</p></div>
+          <div><span className="text-ink-soft">ID</span><p className="text-ink-secondary text-xs font-mono">{user.id?.slice(0, 8)}…</p></div>
         </div>
       </div>
 
       <button onClick={() => { localStorage.removeItem("token"); router.push("/"); }}
-        className="cursor-pointer w-full rounded-xl py-2.5 text-sm text-stone-500 border border-stone-200 hover:bg-stone-50 transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
+        className="cursor-pointer w-full rounded-xl py-2.5 text-sm text-ink-soft border border-border hover:bg-ink-bg transition-colors focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">
         {lang === "zh" ? "退出登录" : "Sign Out"}
       </button>
     </div>

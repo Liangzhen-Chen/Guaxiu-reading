@@ -1,7 +1,7 @@
 """对话记录表 —— 每轮苏格拉底追问存一条。jsonb 灵活存储追问链路。"""
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, func
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Text, Index, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.database import Base
@@ -34,3 +34,12 @@ class Conversation(Base):
     )
 
     book: Mapped["Book"] = relationship("Book", back_populates="conversations")
+
+
+# P5-9: Composite index for efficient book+chapter+round queries
+Index(
+    "ix_conv_book_chapter_round",
+    Conversation.book_id,
+    Conversation.chapter_index,
+    Conversation.round_index,
+)

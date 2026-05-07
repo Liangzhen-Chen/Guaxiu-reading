@@ -1,13 +1,49 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLang } from "./lang";
 
 import { API } from "./config";
+
+function useFocusTrap(open: boolean, dialogRef: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
+  const prevFocus = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    prevFocus.current = document.activeElement as HTMLElement;
+    const dlg = dialogRef.current;
+    if (!dlg) return;
+    const focusable = dlg.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    // Focus first focusable element
+    first?.focus();
+
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab") return;
+      if (focusable.length === 0) return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("keydown", handleKey);
+      prevFocus.current?.focus();
+    };
+  }, [open]);
+}
 
 function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => void; lang: string }) {
   const [msg, setMsg] = useState("");
   const [contact, setContact] = useState("");
   const [sent, setSent] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, dialogRef, onClose);
 
   async function submit() {
     if (!msg.trim()) return;
@@ -21,9 +57,9 @@ function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => 
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-6 w-80 shadow-xl" onClick={e => e.stopPropagation()}>
-        <h3 className="font-semibold mb-4 text-ink">{lang === "zh" ? "反馈" : "Feedback"}</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+      <div ref={dialogRef} className="bg-white rounded-2xl p-6 w-80 shadow-xl" onClick={e => e.stopPropagation()}>
+        <h3 id="feedback-title" className="font-semibold mb-4 text-ink">{lang === "zh" ? "反馈" : "Feedback"}</h3>
         {sent ? (
           <p className="text-sm text-green-600 text-center py-8">{lang === "zh" ? "感谢反馈！" : "Thanks!"}</p>
         ) : (
@@ -40,10 +76,12 @@ function FeedbackModal({ open, onClose, lang }: { open: boolean; onClose: () => 
 
 function SatisfactionPopup({ onRate }: { onRate: (ok: boolean) => void }) {
   const { lang } = useLang();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, dialogRef, () => {});
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in">
-      <div className="bg-white rounded-2xl p-6 w-72 shadow-xl text-center">
-        <p className="text-sm mb-4 text-ink">{lang === "zh" ? "刚才的回答有帮助吗？" : "Was that response helpful?"}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="satisfaction-title">
+      <div ref={dialogRef} className="bg-white rounded-2xl p-6 w-72 shadow-xl text-center">
+        <p id="satisfaction-title" className="text-sm mb-4 text-ink">{lang === "zh" ? "刚才的回答有帮助吗？" : "Was that response helpful?"}</p>
         <div className="flex gap-3 justify-center">
           <button onClick={() => onRate(true)} className="rounded-xl bg-ink text-white px-6 py-2 text-sm font-medium hover:bg-black focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👍 {lang === "zh" ? "有用" : "Yes"}</button>
           <button onClick={() => onRate(false)} className="rounded-xl border border-border text-ink px-6 py-2 text-sm font-medium hover:bg-[#f5f5f7] focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">👎 {lang === "zh" ? "没用" : "No"}</button>

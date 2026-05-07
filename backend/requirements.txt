@@ -16,3 +16,4 @@ pymupdf==1.25.*
 ebooklib==0.18.*
 cos-python-sdk-v5>=1.9.0
 email-validator>=2.0 pydantic[email]
+slowapi>=0.1.9

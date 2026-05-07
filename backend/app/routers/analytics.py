@@ -1,5 +1,6 @@
 """埋点 + 反馈路由"""
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
@@ -7,6 +8,13 @@ from app.models.analytics_event import AnalyticsEvent
 from app.models.feedback import Feedback
 from app.middleware.auth import get_optional_user, get_current_user
 from app.models.user import User
+from app.config import settings
+
+
+class FeedbackCreate(BaseModel):
+    """反馈提交 —— 带字段最大长度限制。"""
+    content: str = Field(..., min_length=1, max_length=2000)
+    contact: str | None = Field(None, max_length=200)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -17,15 +25,17 @@ async def track_event(request: Request, db: AsyncSession = Depends(get_db), user
     await db.commit()
 
 @router.post("/feedback", status_code=201)
-async def feedback(request: Request, db: AsyncSession = Depends(get_db), user = Depends(get_optional_user)):
-    data = await request.json()
-    db.add(Feedback(user_id=str(user.id) if user else None, content=data["content"], contact=data.get("contact")))
+async def feedback(data: FeedbackCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    """提交反馈 —— 需登录，content/contact 有长度限制。"""
+    db.add(Feedback(user_id=str(user.id), content=data.content, contact=data.contact))
     await db.commit()
     return {"ok": True}
 
 @router.get("/dashboard")
 async def dashboard(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    """管理员看板 —— 汇总统计"""
+    """管理员看板 —— 仅 admin_emails 白名单内用户可访问。"""
+    if user.email not in settings.admin_emails:
+        raise HTTPException(status_code=403, detail="Forbidden")
     # 事件总数
     r1 = await db.execute(select(func.count(AnalyticsEvent.id)))
     total = r1.scalar()

@@ -2,20 +2,17 @@
 import os
 import uuid
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
+from fastapi.security import HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
+from app.limiter import limiter
 from app.models.user import User
-from app.schemas.user import UserCreate, TokenResponse, UserResponse, WechatLoginRequest, ProfileUpdate
-from app.services.auth_service import hash_password, verify_password, create_token
+from app.schemas.user import UserCreate, TokenResponse, UserResponse, WechatLoginRequest, ProfileUpdate, ChangePasswordRequest
+from app.services.auth_service import hash_password, verify_password, create_token, revoke_token, get_token_jti, revoke_all_user_tokens
 from app.middleware.auth import get_current_user
 from app.config import settings
-
-# TODO: Add rate limiting via slowapi or similar. Critical endpoints (login, register, avatar upload)
-#       should be rate-limited to prevent brute-force attacks and abuse.
-#       Example: @router.post("/login") with @limiter.limit("5/minute")
-#       Requires: pip install slowapi, then integration in app/main.py lifespan.
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -48,14 +45,16 @@ def _detect_image_mime(data: bytes) -> str | None:
     return None
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
-async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/register", status_code=201)
+@limiter.limit("5/minute")
+async def register(request: Request, data: UserCreate, db: AsyncSession = Depends(get_db)):
     # 密码最小长度校验（Pydantic field_validator 已做完整校验，此处保留为防御纵深）
     if len(data.password) < 8:
         raise HTTPException(status_code=400, detail="注册失败，请检查输入")
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="注册失败，请检查输入")
+        # 邮箱已存在 —— 返回相同的 201 状态码和消息体，防止邮箱枚举
+        return {"message": "注册成功"}
     import random, string
     user = User(
         email=data.email,
@@ -65,18 +64,45 @@ async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    token = create_token(str(user.id))
-    return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
+    return {"message": "注册成功"}
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: UserCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/minute")
+async def login(request: Request, data: UserCreate, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
     token = create_token(str(user.id))
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
+
+
+@router.post("/logout", status_code=200)
+async def logout(
+    credentials=Depends(HTTPBearer()),
+    user: User = Depends(get_current_user),
+):
+    """登出 —— 吊销当前 JWT 令牌。"""
+    jti = get_token_jti(credentials.credentials)
+    if jti:
+        revoke_token(jti)
+    return {"message": "已登出"}
+
+
+@router.post("/change-password", status_code=200)
+async def change_password(
+    data: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改密码 —— 验证旧密码后设置新密码，并吊销该用户所有现有令牌。"""
+    if not verify_password(data.old_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="旧密码错误")
+    user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    revoke_all_user_tokens(str(user.id))
+    return {"message": "密码已修改，请重新登录"}
 
 
 @router.post("/wechat-login", response_model=TokenResponse)

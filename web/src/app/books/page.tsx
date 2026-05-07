@@ -16,28 +16,25 @@ export default function BooksPage() {
   const [loading, setLoading] = useState(true);
   const router = useRouter(); const { lang } = useLang();
 
-  // Reading streak
+  // Reading streak: server-driven, localStorage fallback
   const [streakCount, setStreakCount] = useState(0);
+  const gotServerStreak = useRef(false);
+
+  // localStorage fallback (runs once on mount before API responds)
   useEffect(() => {
-    const today = new Date().toISOString().split("T")[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-    const lastRead = localStorage.getItem("last_read_date");
-    let count = parseInt(localStorage.getItem("reading_streak") || "0", 10);
-    if (lastRead === today) {
-      setStreakCount(count);
-    } else if (lastRead === yesterday) {
-      count += 1;
-      localStorage.setItem("reading_streak", String(count));
-      localStorage.setItem("last_read_date", today);
-      setStreakCount(count);
-    } else {
-      localStorage.setItem("reading_streak", "1");
-      localStorage.setItem("last_read_date", today);
-      setStreakCount(1);
-    }
+    if (gotServerStreak.current) return;
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+      const lastRead = localStorage.getItem("last_read_date");
+      const saved = parseInt(localStorage.getItem("reading_streak") || "0", 10);
+      if (lastRead === today) { setStreakCount(Math.max(saved, 1)); }
+      else if (lastRead === yesterday) { setStreakCount(Math.max(saved + 1, 1)); }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => { track("page_view"); if (!T()) { router.push("/login"); return; } load(); }, []);
+  useEffect(() => { document.title = lang === "zh" ? "书架 | 朽瓜" : "Books | Xiugua"; }, [lang]);
   // Bug B1 fix: compute needsPoll as a derived value via useMemo
   const needsPoll = useMemo(() => {
     return books.some((b: any) => {
@@ -73,7 +70,21 @@ export default function BooksPage() {
       const t1 = performance.now();
       const res = await api(API + "/api/books");
       console.log(`[books] fetch ${i+1}: ${(performance.now()-t1).toFixed(0)}ms, ok=${res.ok}, status=${res.status}`);
-      if (res.ok) { setBooks((await res.json()).items || []); console.log(`[books] total: ${(performance.now()-t0).toFixed(0)}ms`); break; }
+      if (res.ok) {
+        const data = await res.json();
+        setBooks(data.items || []);
+        // Use server-computed streak, sync to localStorage for offline fallback
+        if (typeof data.streak_count === "number") {
+          gotServerStreak.current = true;
+          setStreakCount(data.streak_count);
+          try {
+            localStorage.setItem("reading_streak", String(data.streak_count));
+            localStorage.setItem("last_read_date", new Date().toISOString().split("T")[0]);
+          } catch { /* ignore */ }
+        }
+        console.log(`[books] total: ${(performance.now()-t0).toFixed(0)}ms`);
+        break;
+      }
       if (i < 2) await new Promise(r => setTimeout(r, 1000));
     }
     if (mounted.current) setLoading(false);
@@ -205,21 +216,21 @@ export default function BooksPage() {
       )}
 
       {upStatus === "uploading" && (
-        <div className="mb-6 bg-white rounded-xl p-4 border border-stone-200">
+        <div className="mb-6 bg-white rounded-xl p-4 border border-border">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium">{upStep || "上传中"}</span>
-            <span className="text-sm text-stone-500">{upStep === "上传中" ? `${upProgress}%` : upStep === "获取上传地址..." ? "" : upStep === "导入中..." ? "" : `${upProgress}%`}</span>
+            <span className="text-sm text-ink-soft">{upStep === "上传中" ? `${upProgress}%` : upStep === "获取上传地址..." ? "" : upStep === "导入中..." ? "" : `${upProgress}%`}</span>
           </div>
           {upStep === "上传中" && (
-            <div className="h-3 rounded-full bg-stone-100">
-              <div className="h-3 rounded-full bg-stone-900 transition-all duration-300" style={{ width: `${upProgress}%` }} />
+            <div className="h-3 rounded-full bg-ink-bg">
+              <div className="h-3 rounded-full bg-ink transition-all duration-300" style={{ width: `${upProgress}%` }} />
             </div>
           )}
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-24 text-ink-soft"><span className="inline-block w-6 h-6 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span></div>
+        <div className="text-center py-24 text-ink-soft"><span className="inline-block w-6 h-6 border-2 border-ink-muted border-t-ink-soft rounded-full animate-spin"></span></div>
       ) : books.length === 0 ? (
         <div className="text-center py-24 text-ink-soft"><p className="text-lg mb-2">{t("noBooks", lang)}</p><p className="text-sm">{t("noBooksHint", lang)}</p></div>
       ) : (
@@ -244,27 +255,27 @@ export default function BooksPage() {
               }}
               tabIndex={0}
               className={`group relative rounded-2xl p-6 transition-colors ${(parsing || preprocessing) ? "bg-[#f5f5f7] cursor-default" : "bg-[#f5f5f7] hover:bg-[#e8e8ed] cursor-pointer"} focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2`}>
-              <button onClick={(e) => delBook(b.id, e)} className="absolute top-2 right-2 text-sm text-stone-500 hover:text-red-500 hover:bg-red-50 rounded-xl w-7 h-7 flex items-center justify-center z-10 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">✕</button>
-              <h3 className={`font-semibold mb-1 ${parsing ? "text-stone-500" : ""}`}>{b.title}</h3>
+              <button onClick={(e) => delBook(b.id, e)} className="absolute top-2 right-2 text-sm text-ink-soft hover:text-red-500 hover:bg-red-50 rounded-xl w-7 h-7 flex items-center justify-center z-10 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">✕</button>
+              <h3 className={`font-semibold mb-1 ${parsing ? "text-ink-soft" : ""}`}>{b.title}</h3>
               <p className="text-sm text-ink-soft mb-2">{b.author || "—"} · {b.file_format?.toUpperCase()}</p>
 
               {/* One-liner from P1 */}
               {b.one_liner && !parsing && !preprocessing && (
-                <p className="text-xs text-ink-soft italic mb-3 border-t border-b border-stone-200 py-2">{b.one_liner}</p>
+                <p className="text-xs text-ink-soft italic mb-3 border-t border-b border-border py-2">{b.one_liner}</p>
               )}
 
               {parsing ? (
-                <div className="flex items-center gap-2 text-xs text-stone-500">
-                  <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-stone-500 rounded-full animate-spin"></span>
+                <div className="flex items-center gap-2 text-xs text-ink-soft">
+                  <span className="inline-block w-4 h-4 border-2 border-ink-muted border-t-ink-soft rounded-full animate-spin"></span>
                   {b.parse_status === "pending" ? "排队中…" : "解析中…"}
                 </div>
               ) : b.parse_status === "failed" ? (
                 <div className="text-xs text-red-400">解析失败 {b.parse_error ? `: ${b.parse_error.slice(0, 40)}` : ""}</div>
               ) : preprocessing || (ready && ppIncomplete) ? (
                 <div>
-                  <div className="h-1.5 rounded-full bg-stone-200 mb-1"><div className="h-1.5 rounded-full bg-stone-600 transition-all" style={{width: ppTotal>0?`${Math.round(ppDone/ppTotal*100)}%`:'20%'}}/></div>
-                  <p className="text-xs text-stone-500">AI 正在阅读 第{ppDone}/{ppTotal}章</p>
-                  {ready && <p className="text-xs text-stone-500 mt-1">{lang==="zh"?"前两章已完成，可开始阅读":"First 2 chapters ready"}</p>}
+                  <div className="h-1.5 rounded-full bg-ink-bg mb-1"><div className="h-1.5 rounded-full bg-ink-secondary transition-all" style={{width: ppTotal>0?`${Math.round(ppDone/ppTotal*100)}%`:'20%'}}/></div>
+                  <p className="text-xs text-ink-soft">AI 正在阅读 第{ppDone}/{ppTotal}章</p>
+                  {ready && <p className="text-xs text-ink-soft mt-1">{lang==="zh"?"前两章已完成，可开始阅读":"First 2 chapters ready"}</p>}
                 </div>
               ) : !ready && !isReading ? (
                 <button onClick={(e) => { e.stopPropagation(); startPreprocess(b.id); }}
@@ -281,12 +292,12 @@ export default function BooksPage() {
                     <div className="flex items-center gap-1 mb-1"><span className="text-xs text-green-600">AI 已读完</span></div>
                   )}
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-stone-500">{b.progress_status === "completed" ? "已完成" : isReading ? `${b.progress_percent}%` : ppAllDone ? `${ppTotal}章已解析` : `第${ppDone}/${ppTotal}章已解析`}</span>
+                    <span className="text-xs text-ink-soft">{b.progress_status === "completed" ? "已完成" : isReading ? `${b.progress_percent}%` : ppAllDone ? `${ppTotal}章已解析` : `第${ppDone}/${ppTotal}章已解析`}</span>
                     {ready && !isReading && (
                       <span className="text-xs font-medium text-white bg-ink px-3 py-1 rounded-xl">开始阅读</span>
                     )}
                     {isReading && (
-                      <span className="text-xs text-stone-500 border border-stone-200 px-3 py-1 rounded-xl">继续阅读</span>
+                      <span className="text-xs text-ink-soft border border-border px-3 py-1 rounded-xl">继续阅读</span>
                     )}
                   </div>
                 </div>

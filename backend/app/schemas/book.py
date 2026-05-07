@@ -35,3 +35,4 @@ class BookResponse(BaseModel):
 class BookListResponse(BaseModel):
     items: list[BookResponse]
     total: int
+    streak_count: int = 0

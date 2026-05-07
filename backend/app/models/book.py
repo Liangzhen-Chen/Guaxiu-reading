@@ -35,6 +35,9 @@ class Book(Base):
     token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chapter_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # 语言
+    language: Mapped[str] = mapped_column(String(10), default="zh")  # zh / en
+
     # 状态
     parse_status: Mapped[str] = mapped_column(
         String(20), default="pending"

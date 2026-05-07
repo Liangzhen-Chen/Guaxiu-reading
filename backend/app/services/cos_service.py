@@ -1,8 +1,11 @@
 """COS 对象存储直传服务"""
 import os
 import uuid
+import logging
 from datetime import timedelta
 from qcloud_cos import CosConfig, CosS3Client
+
+logger = logging.getLogger("xiugua.cos")
 from qcloud_cos.cos_exception import CosServiceError
 
 
@@ -53,7 +56,7 @@ def download_from_cos(key: str, local_path: str) -> bool:
         resp["Body"].get_stream_to_file(local_path)
         return True
     except CosServiceError as e:
-        print(f"COS download failed: {e}")
+        logger.error("COS download failed: %s", e)
         return False
 
 
@@ -63,8 +66,8 @@ def delete_from_cos(key: str) -> bool:
     bucket = os.environ["COS_BUCKET"]
     try:
         client.delete_object(Bucket=bucket, Key=key)
-        print(f"COS deleted: {key}")
+        logger.info("COS deleted: %s", key)
         return True
     except CosServiceError as e:
-        print(f"COS delete failed: {e}")
+        logger.error("COS delete failed: %s", e)
         return False

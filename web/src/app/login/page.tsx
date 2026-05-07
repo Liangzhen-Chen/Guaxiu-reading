@@ -12,6 +12,7 @@ export default function LoginPage() {
   const { lang } = useLang();
 
   useEffect(() => { track("page_view"); }, []);
+  useEffect(() => { document.title = lang === "zh" ? "登录 | 朽瓜" : "Sign In | Xiugua"; }, [lang]);
 
   async function submit() {
     if (!email || !pwd) { setErr(t("fillAll", lang)); return; }
@@ -39,9 +40,11 @@ export default function LoginPage() {
   return (
     <div className="max-w-sm mx-auto mt-16">
       <h1 className="font-display text-2xl font-bold text-center mb-10 text-ink">{t("login", lang)}</h1>
-      {err && <p className="text-sm text-red-500 text-center mb-4">{err}</p>}
-      <input className="w-full border-b border-border px-1 py-3 text-sm mb-4 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" placeholder={t("email", lang)} value={email} onChange={e => setEmail(e.target.value)} />
-      <input className="w-full border-b border-border px-1 py-3 text-sm mb-8 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} />
+      {err && <p id="login-error" className="text-sm text-red-500 text-center mb-4" role="alert">{err}</p>}
+      <label htmlFor="login-email" className="sr-only">{t("email", lang)}</label>
+      <input id="login-email" className="w-full border-b border-border px-1 py-3 text-sm mb-4 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" placeholder={t("email", lang)} value={email} onChange={e => setEmail(e.target.value)} aria-invalid={err ? "true" : undefined} aria-describedby={err ? "login-error" : undefined} />
+      <label htmlFor="login-password" className="sr-only">{t("password", lang)}</label>
+      <input id="login-password" className="w-full border-b border-border px-1 py-3 text-sm mb-8 placeholder:text-ink-soft focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" type="password" placeholder={t("password", lang)} value={pwd} onChange={e => setPwd(e.target.value)} onKeyDown={e => e.key === "Enter" && submit()} aria-invalid={err ? "true" : undefined} aria-describedby={err ? "login-error" : undefined} />
       <button onClick={submit} className="cursor-pointer w-full rounded-xl bg-ink text-white py-3 text-sm font-medium hover:bg-black transition-colors mb-3 focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{t("login", lang)}</button>
       <div className="text-center text-sm text-ink-soft">{t("noAccount", lang)}<a href="/register" className="text-ink underline focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">{t("register", lang)}</a></div>
 

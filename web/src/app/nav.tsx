@@ -6,7 +6,7 @@ import { useLang, t } from "./lang";
 
 export function Nav() {
   const p = usePathname();
-  const { lang } = useLang();
+  const { lang, setLang } = useLang();
   const hasToken = typeof window !== "undefined" && !!localStorage.getItem("token");
   const [show, setShow] = useState(hasToken);
 
@@ -21,8 +21,8 @@ export function Nav() {
         {show && <Link href="/profile" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{lang === "zh" ? "我的" : "Me"}</Link>}
         {show && <button onClick={() => { localStorage.removeItem("token"); window.location.href = "/"; }} className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{lang === "zh" ? "退出" : "Out"}</button>}
         {!show && p !== "/login" && <Link href="/login" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{t("login", lang)}</Link>}
-        <button onClick={() => { if (lang !== "zh") { localStorage.setItem("lang", "zh"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "zh" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>中文</button>
-        <button onClick={() => { if (lang !== "en") { localStorage.setItem("lang", "en"); window.location.reload(); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "en" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>EN</button>
+        <button onClick={() => { if (lang !== "zh") { localStorage.setItem("lang", "zh"); setLang("zh"); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "zh" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>中文</button>
+        <button onClick={() => { if (lang !== "en") { localStorage.setItem("lang", "en"); setLang("en"); } }} className={`text-xs px-2 py-0.5 rounded-full ${lang === "en" ? "bg-ink text-white" : "text-ink-soft hover:text-ink"}`}>EN</button>
       </div>
     </nav>
   );
