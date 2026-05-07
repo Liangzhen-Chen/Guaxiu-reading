@@ -64,5 +64,5 @@ class Book(Base):
         "ReadingProgress", back_populates="book", uselist=False
     )
     conversations: Mapped[list["Conversation"]] = relationship(
-        "Conversation", back_populates="book"
+        "Conversation", back_populates="book", passive_deletes=True
     )
