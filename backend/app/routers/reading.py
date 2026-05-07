@@ -395,6 +395,34 @@ async def get_chapter_text_endpoint(
     return {"chapter": chapter, "total": book.chapter_count, "text": chapter_text[:3000]}
 
 
+@router.get("/wiki-status/{book_id}")
+async def get_wiki_status(
+    book_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """轻量wiki状态 —— 仅返回wiki清单和进度，不加载对话历史"""
+    book = await _get_book(db, book_id, user.id)
+    progress = book.progress
+
+    from app.services.chapter_service import _build_wiki_checklist
+    chapter = max(progress.current_chapter, 1) if progress else 1
+    wiki_checklist = []
+    if progress:
+        wiki_checklist = await _build_wiki_checklist(book, chapter, progress, db)
+
+    return {
+        "wiki_checklist": wiki_checklist,
+        "current_wiki_id": progress.current_wiki_id if progress else None,
+        "completed_wikis": progress.completed_wikis if progress else [],
+        "status": progress.status if progress else "not_started",
+        "mode": progress.mode if progress else None,
+        "current_chapter": chapter,
+        "total_chapters": book.chapter_count or 1,
+        "has_history": True,
+    }
+
+
 @router.get("/resume/{book_id}", response_model=ProgressResponse)
 async def resume_reading(
     book_id: uuid.UUID,
