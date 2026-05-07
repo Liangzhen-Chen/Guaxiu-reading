@@ -595,7 +595,7 @@ export default function ReadPage() {
 
       <div className="flex gap-3">
         {/* LEFT: Wiki Checklist */}
-        <div className="w-40 shrink-0 hidden lg:block">
+        <div className="w-40 shrink-0 hidden md:block">
           <WikiChecklist
             wikiChecklist={wikiChecklist}
             currentWikiId={currentWikiId}
