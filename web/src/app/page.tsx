@@ -369,7 +369,7 @@ export default function Landing() {
               <div className="mt-6 flex items-center gap-4">
                 {!loading && renderCTA("default")}
                 {!loading && !loggedIn && (
-                  <p className="text-xs text-ink-muted">{t("无需信用卡 · 免费开始", "No credit card required")}</p>
+                  <p className="text-xs text-ink-muted">{t("免费开始", "Free to start")}</p>
                 )}
               </div>
             </div>
