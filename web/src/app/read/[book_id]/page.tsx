@@ -595,7 +595,7 @@ export default function ReadPage() {
 
       <div className="flex gap-3">
         {/* LEFT: Wiki Checklist */}
-        <div className={`w-48 shrink-0 ${mobilePanel === "wiki" ? "" : "hidden"} lg:block`}>
+        <div className="w-48 shrink-0 hidden lg:!block">
           <WikiChecklist
             wikiChecklist={wikiChecklist}
             currentWikiId={currentWikiId}
@@ -607,7 +607,7 @@ export default function ReadPage() {
         </div>
 
         {/* CENTER: Reading Material */}
-        <div className={`w-96 shrink-0 ${mobilePanel === "reading" ? "" : "hidden"} md:block`}>
+        <div className="w-96 shrink-0 hidden md:!block">
           <ReadingMaterial
             readingMaterial={readingMaterial}
             lang={lang}
@@ -616,7 +616,7 @@ export default function ReadPage() {
         </div>
 
         {/* RIGHT: Chat / Assessment */}
-        <div className={`flex-1 min-w-0 ${mobilePanel === "chat" ? "" : "hidden"} md:block`}>
+        <div className="flex-1 min-w-0">
           {status === "assessment" ? (
             <AssessmentPanel
               status={status}
