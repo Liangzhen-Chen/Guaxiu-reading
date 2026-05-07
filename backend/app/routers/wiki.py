@@ -52,6 +52,7 @@ async def list_entries(
     else:
         result = await db.execute(
             select(WikiEntry)
+            .options(selectinload(WikiEntry.book))
             .where(WikiEntry.user_id == user.id)
             .order_by(WikiEntry.updated_at.desc())
             .limit(limit)

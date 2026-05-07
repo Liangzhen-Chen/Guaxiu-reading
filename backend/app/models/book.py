@@ -66,3 +66,6 @@ class Book(Base):
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="book", passive_deletes=True
     )
+    wiki_entries: Mapped[list["WikiEntry"]] = relationship(
+        "WikiEntry", back_populates="book", foreign_keys="[WikiEntry.book_id]"
+    )

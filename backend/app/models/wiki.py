@@ -46,6 +46,13 @@ class WikiEntry(Base):
         UUID(as_uuid=True), ForeignKey("wiki_entries.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Book relationship for resolving book_title
+    book: Mapped["Book | None"] = relationship("Book", back_populates="wiki_entries", foreign_keys=[book_id])
+
+    @property
+    def book_title(self) -> str | None:
+        return self.book.title if self.book else None
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
