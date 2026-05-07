@@ -23,6 +23,8 @@ export default function WikiPage() {
   const [weekAddition, setWeekAddition] = useState(0);
   const [typeFilter, setTypeFilter] = useState("all");
   const [bookFilter, setBookFilter] = useState("all");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
 
   async function delEntry(id: string) {
     if (!confirm("确定删除这个概念吗？")) return;
@@ -32,6 +34,22 @@ export default function WikiPage() {
       else showToast("删除失败", "error");
     } catch { showToast("网络错误", "error"); }
   }
+
+  async function updateEntry(id: string, fields: Record<string, any>) {
+    try {
+      const res = await fetch(API + "/api/wiki/" + id, {
+        method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify(fields),
+      });
+      if (res.ok) {
+        setEntries(prev => prev.map(e => e.id === id ? { ...e, ...fields } : e));
+        showToast("已更新", "success");
+      } else showToast("更新失败", "error");
+    } catch { showToast("网络错误", "error"); }
+  }
+
+  const TYPE_CYCLE: Record<string, string> = { concept: "viewpoint", viewpoint: "case", case: "concept" };
+  const TYPE_LABEL: Record<string, string> = { concept: "概念", viewpoint: "观点", case: "案例" };
   const token = getToken();
 
   useEffect(() => {
@@ -139,12 +157,14 @@ export default function WikiPage() {
               <div className="mb-1">
                 <div className="flex items-center gap-2 mb-0.5">
                   {(() => {
-                    const st = e.entry_subtype || e.entry_type || "concept";
-                    const label = st === "viewpoint" ? "观点" : st === "case" ? "案例" : "概念";
+                    const st = (e.entry_subtype || e.entry_type || "concept") as string;
+                    const label = TYPE_LABEL[st] || "概念";
                     const colors = st === "viewpoint" ? "bg-purple-50 text-purple-700" :
                                    st === "case" ? "bg-blue-50 text-blue-700" :
                                    "bg-amber-50 text-amber-700";
-                    return <span className={"text-xs px-2 py-0.5 rounded "+colors}>{label}</span>;
+                    return <button onClick={(ev) => { ev.stopPropagation(); updateEntry(e.id, { entry_type: st, entry_subtype: TYPE_CYCLE[st] || "concept" }); }}
+                      className={"text-xs px-2 py-0.5 rounded cursor-pointer hover:opacity-80 " + colors}
+                      title="点击切换类型">{label}</button>;
                   })()}
                 </div>
                 {(e.book_title || e.chapter_index != null) && (
@@ -155,7 +175,17 @@ export default function WikiPage() {
                 )}
               </div>
               <h3 className="font-display text-lg font-semibold mb-1">{e.concept_name}</h3>
-              <p className="text-sm text-ink-soft leading-relaxed">{e.ai_definition}</p>
+              {editingId === e.id ? (
+                <textarea value={editText} onChange={ev => setEditText(ev.target.value)}
+                  onBlur={() => { if (editText !== e.ai_definition) updateEntry(e.id, { ai_definition: editText }); setEditingId(null); }}
+                  onKeyDown={ev => { if (ev.key === "Escape") setEditingId(null); }}
+                  className="w-full text-sm p-2 rounded border border-amber-300 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none"
+                  rows={3} autoFocus />
+              ) : (
+                <p className="text-sm text-ink-soft leading-relaxed cursor-pointer hover:bg-amber-50 rounded p-1 -m-1"
+                  onClick={() => { setEditingId(e.id); setEditText(e.ai_definition || ""); }}
+                  title="点击编辑">{e.ai_definition || "(点击添加定义)"}</p>
+              )}
               {e.tags && <div className="flex gap-1 mt-3 flex-wrap">{e.tags.map((t: string, i: number) => (
                 <span key={i} className="text-xs px-2 py-0.5 rounded border border-border text-ink-soft">{t}</span>
               ))}</div>}

@@ -12,6 +12,9 @@ class WikiEntryCreate(BaseModel):
 
 class WikiEntryUpdate(BaseModel):
     concept_name: str | None = None
+    entry_type: str | None = None
+    entry_subtype: str | None = None
+    ai_definition: str | None = None
     user_understanding: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
