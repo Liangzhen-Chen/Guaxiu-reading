@@ -593,7 +593,7 @@ export default function ReadPage() {
         </div>
       </div>
 
-      <div className="grid gap-3" style={{gridTemplateColumns: "160px 288px 1fr"}}>
+      <div className="grid gap-3" style={{gridTemplateColumns: "192px 384px 1fr"}}>
         {/* LEFT: Wiki Checklist */}
         <div className="hidden md:block overflow-auto">
           <WikiChecklist
