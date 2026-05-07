@@ -616,7 +616,7 @@ export default function ReadPage() {
         </div>
 
         {/* RIGHT: Chat / Assessment */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 max-w-2xl">
           {status === "assessment" ? (
             <AssessmentPanel
               status={status}
