@@ -245,9 +245,10 @@ export default function ReadPage() {
           setStreaming(false);
           return;
         }
-        // v4.0: Extract V4_META marker from streamed text
+        // v4.0: Extract V4_META and CHAPTER_END markers from streamed text
         const metaMatch = full.match(/<!--V4_META:([\s\S]*?)-->/);
-        const displayText = metaMatch ? full.replace(/<!--V4_META:[\s\S]*?-->/, '').trim() : full;
+        const displayText = (metaMatch ? full.replace(/<!--V4_META:[\s\S]*?-->/, '') : full)
+          .replace(/<!--CHAPTER_END-->/g, '').trim();
         setMessages(prev => { const copy = [...prev]; copy[copy.length-1] = { role: "assistant", content: displayText }; return copy; });
         // Parse wiki metadata when complete
         if (metaMatch) {
@@ -268,7 +269,7 @@ export default function ReadPage() {
             // Meta parse failure — non-critical, continue
           }
         }
-        if (full.includes("[CHAPTER_END]")) {
+        if (full.includes("<!--CHAPTER_END-->")) {
           setReadingMaterial("");
           setMessages([{ role: "assistant", content: L()==="zh"?"🎉 本章完成！你已掌握本章概念。":"🎉 Chapter complete! You've mastered the concepts." }]);
           setChapterTitle("");

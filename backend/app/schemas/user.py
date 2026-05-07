@@ -1,12 +1,24 @@
-from pydantic import BaseModel, EmailStr
+import re
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 
 
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     password: str
-    display_name: str | None = None
+    display_name: str | None = Field(None, max_length=100)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("密码长度不能少于 8 位")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("密码必须包含至少一个大写字母")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("密码必须包含至少一个数字")
+        return v
 
 
 class UserResponse(BaseModel):
@@ -26,7 +38,7 @@ class WechatLoginRequest(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
-    display_name: str | None = None
+    display_name: str | None = Field(None, max_length=100)
     avatar_url: str | None = None
 
 

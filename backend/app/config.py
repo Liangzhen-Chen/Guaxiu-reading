@@ -4,7 +4,6 @@
 ⚠️ 模型切换口：LLM_MODEL / VISION_MODEL 通过 .env 切换
 """
 import os
-import warnings
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -61,6 +60,10 @@ class Settings(BaseSettings):
     wechat_app_id: str = ""
     wechat_app_secret: str = ""
 
+    # ── 管理员邮箱列表 ──
+    # 用于 /debug/status 等管理端点的访问控制
+    admin_emails: list[str] = ["admin@xiugua-reading.cn"]
+
     # ── Cobrand ──
     app_name: str = "朽瓜"
     app_version: str = "0.1.0"
@@ -72,14 +75,13 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# 启动时校验：JWT_SECRET 不得为默认值
+# 启动时校验：JWT_SECRET 不得为默认值 —— 如果为 "change-me" 则直接崩溃
 if settings.jwt_secret == "change-me":
-    msg = (
-        "WARNING: JWT_SECRET is still set to the default 'change-me' value. "
-        "Set a strong random secret via the JWT_SECRET environment variable or .env file."
+    raise RuntimeError(
+        "JWT_SECRET is still set to the default value 'change-me'. "
+        "Set a strong random secret via the JWT_SECRET environment variable or .env file "
+        "before starting the application. Example: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\""
     )
-    print(msg)
-    warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
 # 确保存储目录存在
 Path(settings.book_storage_path).mkdir(parents=True, exist_ok=True)

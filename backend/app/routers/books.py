@@ -572,6 +572,12 @@ async def _preprocess_book(book_id: str, title: str, text_path: str, total_chapt
             await db.commit()
         except Exception as e:
             print(f"Preprocess failed for book {book_id}: {e}")
+            await db.execute(
+                update(Book).where(Book.id == book_id).values(
+                    preprocess_status="failed",
+                )
+            )
+            await db.commit()
 
 
 @router.delete("/{book_id}", status_code=204)

@@ -3,6 +3,7 @@ LLM 调用服务 —— DeepSeek API，支持流式输出。
 ⚠️ 预留切换口：修改 model= 参数即可切到任意 OpenAI 兼容模型
 """
 import logging
+import time
 import httpx
 from openai import AsyncOpenAI
 from app.config import settings
@@ -20,6 +21,7 @@ def _log_llm_usage(
     prompt_tokens: int | None,
     completion_tokens: int | None,
     stream: bool = False,
+    elapsed_ms: int | None = None,
 ) -> None:
     """Emit a structured JSON log entry for LLM token usage."""
     if prompt_tokens is None or completion_tokens is None:
@@ -36,6 +38,7 @@ def _log_llm_usage(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
             "estimated_cost_usd": round(cost_prompt + cost_completion, 6),
+            "elapsed_ms": elapsed_ms,
         },
     )
 
@@ -65,6 +68,7 @@ async def chat_stream(
         timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
     model_name = model or settings.llm_model
     client = get_client()
+    _start = time.perf_counter()
     stream = await client.chat.completions.create(
         model=model_name,
         messages=messages,
@@ -81,6 +85,7 @@ async def chat_stream(
             delta = chunk.choices[0].delta
             if delta.content:
                 yield delta.content
+    elapsed_ms = int((time.perf_counter() - _start) * 1000)
     if usage:
         _log_llm_usage(
             request_id=get_request_id(),
@@ -88,9 +93,10 @@ async def chat_stream(
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             stream=True,
+            elapsed_ms=elapsed_ms,
         )
-        logger.debug("LLM stream usage: prompt_tokens=%s, completion_tokens=%s",
-                     usage.prompt_tokens, usage.completion_tokens)
+        logger.debug("LLM stream usage: prompt_tokens=%s, completion_tokens=%s, elapsed_ms=%s",
+                     usage.prompt_tokens, usage.completion_tokens, elapsed_ms)
 
 
 async def chat(
@@ -105,6 +111,7 @@ async def chat(
         timeout = httpx.Timeout(settings.llm_timeout_connect, read=settings.llm_timeout_read)
     model_name = model or settings.llm_model
     client = get_client()
+    _start = time.perf_counter()
     response = await client.chat.completions.create(
         model=model_name,
         messages=messages,
@@ -112,6 +119,7 @@ async def chat(
         max_tokens=max_tokens,
         timeout=timeout,
     )
+    elapsed_ms = int((time.perf_counter() - _start) * 1000)
     usage = response.usage
     if usage:
         _log_llm_usage(
@@ -120,9 +128,10 @@ async def chat(
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             stream=False,
+            elapsed_ms=elapsed_ms,
         )
-    logger.debug("LLM chat usage: prompt_tokens=%s, completion_tokens=%s",
-                 usage.prompt_tokens, usage.completion_tokens)
+    logger.debug("LLM chat usage: prompt_tokens=%s, completion_tokens=%s, elapsed_ms=%s",
+                 usage.prompt_tokens, usage.completion_tokens, elapsed_ms)
     return response.choices[0].message.content or ""
 
 

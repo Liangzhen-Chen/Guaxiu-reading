@@ -1,5 +1,7 @@
 """导读路由 —— 核心：苏格拉底式流式对话"""
 import json
+import logging
+import re as _re
 import httpx
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +27,7 @@ from app.services.socratic_service import (
 )
 from app.services.llm_service import chat, chat_stream, count_tokens
 
+logger = logging.getLogger("xiugua.reading")
 router = APIRouter(prefix="/api/reading", tags=["reading"])
 
 ASSESSMENT_CHAPTER = -1
@@ -131,7 +134,8 @@ async def assessment(
                     {"profile": result.get("profile", {}), "chapter_frameworks": {"1": framework}},
                     ensure_ascii=False,
                 )
-        except: pass
+        except Exception:
+            logger.warning("assessment: eager chapter 1 framework generation failed", exc_info=True)
 
     await db.commit()
 
@@ -176,15 +180,6 @@ async def reading_chat(
 
     completed_wikis = progress.completed_wikis or []
 
-    # 读全书文本
-    book_text = ""
-    if book.text_path:
-        try:
-            with open(book.text_path, "r", encoding="utf-8") as f:
-                book_text = f.read()
-        except FileNotFoundError:
-            pass
-
     # 获取对话历史
     prev = await db.execute(
         select(Conversation).where(
@@ -197,6 +192,42 @@ async def reading_chat(
     # Limit to last 30 rounds (60 messages) to avoid context overload
     if len(history) > 60:
         history = history[-60:]
+
+    # Max-retries-per-wiki guard: count consecutive rounds without wiki transition
+    consecutive_same_wiki = 0
+    for msg in reversed(history):
+        if msg["role"] == "assistant":
+            meta_match = _re.search(r'<!--V4_META:([\s\S]*?)-->', msg["content"])
+            if meta_match:
+                try:
+                    meta_obj = json.loads(meta_match.group(1))
+                    wiki_id_in_meta = meta_obj.get("current_wiki", {}).get("id", "")
+                    if wiki_id_in_meta == current_wiki_id:
+                        consecutive_same_wiki += 1
+                    else:
+                        break
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    break
+            else:
+                break
+        else:
+            break
+
+    force_skip_note = ""
+    if consecutive_same_wiki >= 5:
+        force_skip_note = (
+            "\n\n## 强制推进指令：当前 Wiki 已在 5 轮以上未推进，"
+            "请直接设定 wiki_transition=true，将 current_wiki 更新为清单中的下一个。"
+            "如果用户仍未完全理解，给出简要解释后仍然必须过渡。"
+        )
+        logger.warning(
+            "Max-retries per wiki: force-skipping wiki=%s rounds=%d book=%s ch=%d",
+            current_wiki_id, consecutive_same_wiki, book.id, chapter,
+        )
+
+    # Strip V4_META markers from history before sending to LLM
+    for msg in history:
+        msg["content"] = _re.sub(r'<!--V4_META:[\s\S]*?-->', '', msg["content"]).strip()
 
     # 保存用户消息
     round_idx = len([m for m in history if m["role"] == "user"])
@@ -252,20 +283,12 @@ async def reading_chat(
 
     profile = {}
     if progress.assessment_result:
-        try: profile = json.loads(progress.assessment_result).get("profile", {})
-        except: pass
+        try:
+            profile = json.loads(progress.assessment_result).get("profile", {})
+        except Exception:
+            logger.warning("Failed to parse assessment_result for profile", exc_info=True)
 
-    # Language detection: if book text is predominantly English but UI is Chinese, add instruction
     lang_instruction = "中文对话" if language == "zh" else "English conversation"
-    if language == "zh" and book_text:
-        sample = book_text[:2000]
-        ascii_chars = sum(1 for c in sample if ord(c) < 128)
-        if ascii_chars > len(sample) * 0.6:
-            # Book is mostly English, user wants Chinese
-            lang_instruction = """重要语言规则：本书原文为英文。你必须使用中文进行对话和提问。
-- ai_response 全部用中文，包括对用户的理解反馈、追问等
-- reading_material 可以用英文原文（保持原汁原味），但如果引用原文后需附带中文解释
-- 禁止直接用英文与用户对话"""
 
     # No wiki fallback message
     no_wiki_note = ""
@@ -294,7 +317,7 @@ async def reading_chat(
                 recent_part.insert(0, {"role": "system", "content": f"[Previous conversation summary]: {compressed}"})
                 history = recent_part
             except Exception:
-                pass  # compression failure is non-critical
+                logger.warning("P6 conversation compression failed", exc_info=True)
 
     p4_prompt = _p("p4_reading", language).format(
         book_title=book.title,
@@ -307,11 +330,9 @@ async def reading_chat(
         language_instruction=lang_instruction,
     )
 
-    import logging
-    logger = logging.getLogger("xiugua.reading")
     logger.info("P4 call: mode=%s book=%s chapter=%d lang=%s", mode, book.id, chapter, language)
 
-    system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}"}]
+    system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}{force_skip_note}"}]
     messages = system_msgs + history
 
     # 流式对话（先收集完整响应，解析JSON，再返回文本）
@@ -329,6 +350,11 @@ async def reading_chat(
         except Exception:
             parsed = {"ai_response": full_response, "current_wiki": {"id": current_wiki_id, "name": ""}, "reading_material": "", "wiki_transition": False, "transition_message": ""}
             ai_text = full_response
+
+        # Sanitize: strip any CHAPTER_END marker that could leak from AI response
+        CHAPTER_END_MARKER = "<!--CHAPTER_END-->"
+        if CHAPTER_END_MARKER in ai_text:
+            ai_text = ai_text.replace(CHAPTER_END_MARKER, "").strip()
 
         # D3: Save conversation to DB FIRST, then yield to user
         all_done = False
@@ -409,7 +435,8 @@ async def get_progress(
             ch_key = str(max(progress.current_chapter, 1))
             fw = stored.get("chapter_frameworks", {}).get(ch_key, {})
             resp.chapter_concepts = _extract_theses(fw.get("argument_tree", {}))
-        except: pass
+        except Exception:
+            logger.warning("get_progress: failed to extract chapter_concepts from assessment_result", exc_info=True)
 
     if include_history and progress and progress.status not in ("not_started",):
         chapter = max(progress.current_chapter, 1)
@@ -431,7 +458,8 @@ async def get_progress(
             if book.category:
                 framework = json.loads(book.category)
                 resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
-        except: pass
+        except Exception:
+            logger.warning("get_progress: failed to extract concepts from book.category (not_started path)", exc_info=True)
     return resp
 
 
@@ -473,7 +501,8 @@ async def resume_reading(
             if book.category:
                 framework = json.loads(book.category)
                 resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
-        except: pass
+        except Exception:
+            logger.warning("resume: failed to extract concepts from book.category (no progress path)", exc_info=True)
         return resp
 
     resp = _to_progress_response(book, progress)
@@ -506,7 +535,8 @@ async def resume_reading(
             try:
                 parsed = json.loads(meta_match.group(1))
                 last_material = parsed.get("reading_material", "")
-            except: pass
+            except Exception:
+                logger.warning("resume: failed to parse V4_META marker", exc_info=True)
             content = _re2.sub(r'<!--V4_META:[\s\S]*?-->', '', content).strip()
         clean_messages.append({"role": m.role, "content": content, "round": m.round_index})
     resp.last_messages = clean_messages
@@ -518,7 +548,8 @@ async def resume_reading(
             if book.category:
                 framework = json.loads(book.category)
                 resp.chapter_concepts = _extract_theses(framework.get("argument_tree", {}))
-        except: pass
+        except Exception:
+            logger.warning("get_progress: failed to extract concepts from book.category (not_started path)", exc_info=True)
     return resp
 
 
@@ -682,7 +713,7 @@ def _get_chapter_markers(book) -> list | None:
             vc = data.get("validated_chapters", [])
             if vc: return [c["regex_title"] for c in vc if c.get("action") == "keep"]
     except (json.JSONDecodeError, TypeError):
-        pass
+        logger.warning("_get_chapter_markers: failed to parse book.category JSON")
     return None
 
 

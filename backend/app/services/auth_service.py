@@ -1,4 +1,5 @@
 """认证服务 —— 密码哈希 + JWT 签发/验证"""
+import uuid
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 import bcrypt
@@ -14,8 +15,14 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_token(user_id: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": user_id, "exp": expire}
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_expire_minutes)
+    payload = {
+        "sub": user_id,
+        "exp": expire,
+        "jti": str(uuid.uuid4()),       # JWT ID — 用于令牌吊销
+        "iat": now,                      # 签发时间
+    }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 

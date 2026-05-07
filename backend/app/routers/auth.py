@@ -1,5 +1,7 @@
 """认证路由 —— 邮箱注册/登录 + 微信登录 + 个人信息"""
-import os, uuid, httpx
+import os
+import uuid
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,15 +12,45 @@ from app.services.auth_service import hash_password, verify_password, create_tok
 from app.middleware.auth import get_current_user
 from app.config import settings
 
+# TODO: Add rate limiting via slowapi or similar. Critical endpoints (login, register, avatar upload)
+#       should be rate-limited to prevent brute-force attacks and abuse.
+#       Example: @router.post("/login") with @limiter.limit("5/minute")
+#       Requires: pip install slowapi, then integration in app/main.py lifespan.
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 AVATAR_DIR = os.path.join(settings.book_storage_path, "..", "avatars")
 os.makedirs(AVATAR_DIR, exist_ok=True)
 
+# 允许的头像 MIME 类型
+ALLOWED_AVATAR_MIMES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
+# ⽂件魔术字节签名 -> MIME 映射（用于内容类型验证）
+MAGIC_BYTES: list[tuple[bytes, str]] = [
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),  # WebP — RIFF + "WEBP" at offset 8
+]
+
+
+def _detect_image_mime(data: bytes) -> str | None:
+    """Check magic bytes to detect actual image type."""
+    for signature, mime in MAGIC_BYTES:
+        if mime == "image/webp":
+            # WebP: RIFF....WEBP
+            if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+                return mime
+        else:
+            if data.startswith(signature):
+                return mime
+    return None
+
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    # 密码最小长度校验
+    # 密码最小长度校验（Pydantic field_validator 已做完整校验，此处保留为防御纵深）
     if len(data.password) < 8:
         raise HTTPException(status_code=400, detail="注册失败，请检查输入")
     existing = await db.execute(select(User).where(User.email == data.email))
@@ -98,7 +130,10 @@ async def get_profile(user: User = Depends(get_current_user)):
 
 @router.put("/profile", response_model=UserResponse)
 async def update_profile(data: ProfileUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    if data.display_name is not None: user.display_name = data.display_name
+    if data.display_name is not None:
+        if len(data.display_name) > 100:
+            raise HTTPException(status_code=400, detail="display_name 不能超过 100 个字符")
+        user.display_name = data.display_name
     if data.avatar_url is not None: user.avatar_url = data.avatar_url
     await db.commit(); await db.refresh(user)
     return UserResponse.model_validate(user)
@@ -106,12 +141,43 @@ async def update_profile(data: ProfileUpdate, db: AsyncSession = Depends(get_db)
 
 @router.post("/avatar", response_model=UserResponse)
 async def upload_avatar(file: UploadFile = File(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    ext = os.path.splitext(file.filename or ".png")[1] or ".png"
+    # 1. 校验 Content-Type 头
+    if file.content_type not in ALLOWED_AVATAR_MIMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的头像格式: {file.content_type}。仅支持 JPEG、PNG、GIF、WebP。",
+        )
+
+    # 2. 读文件内容
+    content = await file.read()
+
+    # 3. 文件大小校验
+    if len(content) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="头像不能超过 2MB")
+
+    # 4. 魔术字节校验 —— 确认文件确实是图片，防止 MIME 伪造
+    detected_mime = _detect_image_mime(content)
+    if detected_mime is None:
+        raise HTTPException(status_code=400, detail="文件内容不是有效的图片格式")
+    # 确保声明的 MIME 与实际内容一致
+    if detected_mime != file.content_type:
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件实际格式 ({detected_mime}) 与声明的格式 ({file.content_type}) 不一致",
+        )
+
+    # 5. 安全写入
+    ext_map = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+    }
+    ext = ext_map[detected_mime]
     filename = f"{user.id}{ext}"
     filepath = os.path.join(AVATAR_DIR, filename)
-    content = await file.read()
-    if len(content) > 2 * 1024 * 1024: raise HTTPException(status_code=400, detail="头像不能超过 2MB")
-    with open(filepath, "wb") as f: f.write(content)
+    with open(filepath, "wb") as f:
+        f.write(content)
     user.avatar_url = f"/avatars/{filename}"
     await db.commit(); await db.refresh(user)
     return UserResponse.model_validate(user)

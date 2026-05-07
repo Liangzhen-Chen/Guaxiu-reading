@@ -1,11 +1,18 @@
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 
 class ModeSelection(BaseModel):
     book_id: UUID
-    mode: str = "quick"    # quick / balanced / deep
-    language: str = "zh"   # zh / en
+    mode: Literal["quick", "deep"] = Field(
+        default="quick",
+        description="阅读模式：quick=快速模式, deep=深度模式",
+    )
+    language: Literal["zh", "en"] = Field(
+        default="zh",
+        description="语言：zh=中文, en=英文",
+    )
 
 
 class AssessmentRequest(BaseModel):
