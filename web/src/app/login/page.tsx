@@ -30,7 +30,8 @@ export default function LoginPage() {
         setErr(t("loginFailed", lang));
       } else {
         const d = await res.json().catch(() => ({} as any));
-        setErr(d.detail || t("loginFailed", lang));
+        const msg = Array.isArray(d.detail) ? d.detail[0]?.msg : (d.detail || "");
+        setErr(msg || t("loginFailed", lang));
       }
     } catch {
       setErr("网络连接失败，请检查网络后重试");

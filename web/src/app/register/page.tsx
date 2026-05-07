@@ -29,7 +29,8 @@ export default function RegisterPage() {
         setErr(t("registerFailed", lang));
       } else {
         const d = await res.json().catch(() => ({} as any));
-        setErr(d.detail || t("registerFailed", lang));
+        const msg = Array.isArray(d.detail) ? d.detail[0]?.msg : (d.detail || "");
+        setErr(msg || t("registerFailed", lang));
       }
     } catch {
       setErr("网络连接失败，请检查网络后重试");
