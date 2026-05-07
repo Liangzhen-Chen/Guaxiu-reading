@@ -135,4 +135,71 @@ body {
   .animate-in { animation: fadeIn .3s ease; }
   .animate-scale-in { animation: scaleIn .4s cubic-bezier(0.16, 1, 0.3, 1); }
   .animate-slide-up { animation: slideUp .4s cubic-bezier(0.16, 1, 0.3, 1); }
+  .landing-fade-up { animation: landingFadeUp .7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+}
+
+/* ===== Landing Page Styles ===== */
+
+/* Hero ambient warm glow */
+.hero-glow::before {
+  content: "";
+  position: absolute;
+  top: -8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 500px;
+  height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(254, 243, 199, 0.6) 0%, transparent 65%);
+  pointer-events: none;
+  z-index: 0;
+}
+@media (min-width: 768px) {
+  .hero-glow::before { width: 700px; height: 700px; top: -10rem; }
+}
+
+/* Landing feature card — amber top border */
+.feature-card {
+  position: relative;
+  overflow: hidden;
+}
+.feature-card::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-amber-deep) 0%, var(--accent-amber) 100%);
+  opacity: 0.5;
+}
+
+/* Step number circle */
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--surface-amber);
+  color: var(--color-amber-deep);
+  font-weight: 700; font-size: 1.125rem;
+  flex-shrink: 0;
+}
+@media (min-width: 768px) {
+  .step-num { width: 52px; height: 52px; font-size: 1.25rem; }
+}
+
+/* Karpathy quote block */
+.quote-amber {
+  border-left: 3px solid var(--color-amber-deep);
+  padding-left: 1.5rem;
+}
+
+/* Section divider line */
+.section-rule {
+  width: 48px; height: 3px;
+  background: var(--color-amber-deep);
+  border-radius: 2px;
+  opacity: 0.2;
+}
+
+@keyframes landingFadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
 }
