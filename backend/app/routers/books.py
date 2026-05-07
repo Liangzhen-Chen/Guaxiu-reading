@@ -164,7 +164,7 @@ async def presign_upload(
     user: User = Depends(get_current_user),
 ):
     """获取COS预签名上传URL"""
-    from app.services.cos_service import get_presigned_upload
+    from app.services.cos_service import get_presigned_upload, CosNotConfiguredError
     try:
         result = get_presigned_upload(
             user_id=str(user.id),
@@ -172,6 +172,9 @@ async def presign_upload(
             file_type=data.get("file_type", "epub"),
         )
         return result
+    except CosNotConfiguredError:
+        # COS未配置，前端将回退到直接上传
+        raise HTTPException(status_code=400, detail="COS not configured, use direct upload")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"COS 上传配置失败: {str(e)}")
 

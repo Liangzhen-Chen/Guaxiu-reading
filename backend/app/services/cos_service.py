@@ -9,7 +9,23 @@ logger = logging.getLogger("xiugua.cos")
 from qcloud_cos.cos_exception import CosServiceError
 
 
+class CosNotConfiguredError(RuntimeError):
+    """COS 环境变量缺失时抛出，让调用方优雅回退"""
+    pass
+
+
+def _check_cos_env() -> None:
+    """Raise CosNotConfiguredError if any required COS env var is missing."""
+    required = ["COS_REGION", "COS_SECRET_ID", "COS_SECRET_KEY", "COS_BUCKET"]
+    missing = [v for v in required if not os.environ.get(v)]
+    if missing:
+        raise CosNotConfiguredError(
+            f"COS 环境变量未配置: {', '.join(missing)}  — 将回退到直接上传"
+        )
+
+
 def _get_client(accelerate: bool = False):
+    _check_cos_env()
     kwargs = dict(
         Region=os.environ["COS_REGION"],
         SecretId=os.environ["COS_SECRET_ID"],
