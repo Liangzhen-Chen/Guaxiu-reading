@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     # 用于 /debug/status 等管理端点的访问控制
     admin_emails: list[str] = ["admin@xiugua-reading.cn"]
 
+    # ── 腾讯云 COS ──
+    cos_secret_id: str = ""
+    cos_secret_key: str = ""
+    cos_region: str = "ap-shanghai"
+    cos_bucket: str = ""
+
     # ── Cobrand ──
     app_name: str = "朽瓜"
     app_version: str = "0.1.0"
@@ -71,6 +77,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # ignore unknown env vars instead of crashing
 
 
 settings = Settings()
