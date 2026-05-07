@@ -444,10 +444,15 @@ export default function ReadPage() {
   }
 
   async function batchSave(selected: any[]) {
+    // 注入当前章节号，确保每个导入项都携带 chapter_index
+    const annotated = selected.map(item => ({
+      ...item,
+      chapter_index: item.chapter_index ?? chapter,
+    }));
     await fetch(`${API}/api/wiki/batch`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
-      body: JSON.stringify(selected),
+      body: JSON.stringify(annotated),
     });
     localStorage.setItem("wiki_recent_count", String(selected.length));
     localStorage.setItem("wiki_recent_time", Date.now().toString());

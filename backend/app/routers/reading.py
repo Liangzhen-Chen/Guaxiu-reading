@@ -255,10 +255,22 @@ async def reading_chat(
     await db.commit()
     history.append({"role": "user", "content": data.message})
 
+    # Language mismatch: ask user preference on first round
+    lang_mismatch_note = ""
+    if len(history) <= 2 and book.language and book.language != (progress.language or "zh"):
+        ui_lang = "中文" if (progress.language or "zh") == "zh" else "English"
+        book_lang = "中文" if book.language == "zh" else "English"
+        lang_mismatch_note = (
+            f"[重要：这本书的语言是{book_lang}，但你的界面语言是{ui_lang}。"
+            f"请先询问用户希望用哪种语言进行对话。]"
+        )
+
     # Build P4 prompt
     p4_prompt, no_wiki_note = build_reading_prompt(
         progress, book, wiki_checklist, chapter, language,
     )
+    if lang_mismatch_note:
+        p4_prompt = lang_mismatch_note + "\n" + p4_prompt
 
     # P6: Compress conversation if too many rounds
     history = await compress_history(history, language)
@@ -574,6 +586,10 @@ async def chapter_end(
             book.preprocess_progress = pp
             db.add(book)
 
+        # 确保每个 wiki 项都携带 chapter_index，供前端批量调用时使用
+        for w in adjusted_wikis:
+            if "chapter_index" not in w:
+                w["chapter_index"] = chapter
         await db.commit()
         return {"wikis": adjusted_wikis}
     except Exception as e:

@@ -21,6 +21,17 @@ export default function WikiPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const [weekAddition, setWeekAddition] = useState(0);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [bookFilter, setBookFilter] = useState("all");
+
+  async function delEntry(id: string) {
+    if (!confirm("确定删除这个概念吗？")) return;
+    try {
+      const res = await fetch(API + "/api/wiki/" + id, { method: "DELETE", headers: { Authorization: `Bearer ${getToken()}` } });
+      if (res.ok) { setEntries(prev => prev.filter(e => e.id !== id)); showToast("已删除", "success"); }
+      else showToast("删除失败", "error");
+    } catch { showToast("网络错误", "error"); }
+  }
   const token = getToken();
 
   useEffect(() => {
@@ -75,15 +86,40 @@ export default function WikiPage() {
     }
   }
 
+  // Gather unique book titles for filter
+  const bookTitles = [...new Set(entries.map(e => e.book_title).filter(Boolean))] as string[];
+  // Filter entries client-side
+  const filtered = entries.filter(e => {
+    if (typeFilter !== "all") {
+      const st = e.entry_subtype || e.entry_type || "concept";
+      if (st !== typeFilter) return false;
+    }
+    if (bookFilter !== "all" && e.book_title !== bookFilter) return false;
+    return true;
+  });
+
   if (!token) return <div className="text-center py-24 text-ink-soft">请先登录</div>;
 
   return (
     <div>
       <h1 className="font-display text-2xl font-bold mb-6 text-amber-deep">知识库 · {totalCount} 个概念{weekAddition > 0 ? ` · 本周+${weekAddition}` : ""}</h1>
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-3 mb-3">
         <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && load(search)}
           placeholder="搜索概念…" className="flex-1 rounded-lg px-4 py-3 text-sm bg-white border border-border focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2" />
         <button onClick={() => load(search)} className="rounded-lg px-5 py-3 text-sm font-medium text-white bg-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2">搜索</button>
+      </div>
+      <div className="flex gap-3 mb-6">
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="rounded-lg px-3 py-2 text-sm bg-white border border-border focus-visible:ring-2 focus-visible:ring-stone-500">
+          <option value="all">全部类型</option>
+          <option value="concept">概念</option>
+          <option value="viewpoint">观点</option>
+          <option value="case">案例</option>
+        </select>
+        <select value={bookFilter} onChange={e => setBookFilter(e.target.value)} className="rounded-lg px-3 py-2 text-sm bg-white border border-border focus-visible:ring-2 focus-visible:ring-stone-500">
+          <option value="all">全部书籍</option>
+          {bookTitles.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <span className="text-xs text-ink-muted self-center ml-auto">{filtered.length} 个结果</span>
       </div>
       {error && <p className="text-center text-sm text-red-500 mb-4">{error}</p>}
       {isLoading ? (
@@ -98,8 +134,8 @@ export default function WikiPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {entries.map(e => (
-            <div key={e.id} className="rounded-xl p-5 bg-white border border-border hover:border-ink-muted transition-colors">
+          {filtered.map(e => (
+            <div key={e.id} className="rounded-xl p-5 bg-white border border-border hover:border-ink-muted transition-colors relative group">
               <div className="mb-1">
                 <div className="flex items-center gap-2 mb-0.5">
                   {(() => {
@@ -123,6 +159,9 @@ export default function WikiPage() {
               {e.tags && <div className="flex gap-1 mt-3 flex-wrap">{e.tags.map((t: string, i: number) => (
                 <span key={i} className="text-xs px-2 py-0.5 rounded border border-border text-ink-soft">{t}</span>
               ))}</div>}
+              <button onClick={(ev) => { ev.stopPropagation(); delEntry(e.id); }}
+                className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-full text-ink-muted hover:text-red-500 hover:bg-red-50 text-xs"
+                title="删除">✕</button>
             </div>
           ))}
         </div>
