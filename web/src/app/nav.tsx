@@ -13,7 +13,7 @@ export function Nav() {
   useEffect(() => { setShow(!!localStorage.getItem("token")); }, [p]);
 
   return (
-    <nav className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+    <nav className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
       <Link href="/" className="font-display text-lg font-bold text-ink no-underline">朽瓜 <span className="font-normal text-ink-soft text-sm">Xiugua</span></Link>
       <div className="flex gap-5 text-sm text-ink-soft items-center">
         {show && <Link href="/books" className="text-ink-soft hover:text-ink focus-visible:ring-2 focus-visible:ring-stone-500 focus-visible:ring-offset-2 rounded">{t("bookshelf", lang)}</Link>}

@@ -17,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[60] focus:px-4 focus:py-2 focus:bg-white focus:text-ink focus:border focus:border-ink-muted focus:rounded-xl focus:text-sm focus:font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-500">
             跳到主要内容
           </a>
-          <main id="main-content" className="px-6 py-12">{children}</main>
+          <main id="main-content" className="px-6 py-12 max-w-6xl mx-auto">{children}</main>
           <FeedbackButton />
           <ToastContainer />
         </LangProvider>
