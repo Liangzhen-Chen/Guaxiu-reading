@@ -294,6 +294,13 @@ def handle_chapter_end(progress, parsed, ai_signaled_chapter_end, book, chapter)
     """检测并执行 CHAPTER_END。返回 all_done 布尔值。"""
     all_done = parsed.get("chapter_end", False) or ai_signaled_chapter_end
     if all_done:
+        # Bug 1 fix: add current wiki to completed_wikis before clearing
+        # (the last wiki was never marked done because current_wiki.id didn't change)
+        if progress.current_wiki_id:
+            done = list(progress.completed_wikis or [])
+            if progress.current_wiki_id not in done:
+                done.append(progress.current_wiki_id)
+            progress.completed_wikis = done
         total = book.chapter_count or 1
         if chapter >= total:
             progress.status = "completed"

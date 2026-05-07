@@ -120,7 +120,9 @@ export default function ReadPage() {
         if (d.mode) setMode(d.mode);
         if (d.current_chapter) {
           setChapter(d.current_chapter);
-          setChapterTitle(lang==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`);
+          const chLabel = lang==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`;
+          setChapterTitle(chLabel);
+          document.title = `${chLabel} | 朽瓜`;
         }
         if (d.total_chapters) setTotal(d.total_chapters);
         if (d.wiki_checklist?.length) setWikiChecklist(d.wiki_checklist);
@@ -141,20 +143,22 @@ export default function ReadPage() {
       if (res.ok) {
         const d = await res.json();
         // Don't overwrite state already set by wiki-status, but fill in gaps
+        // Bug 2 fix: always restore reading_material from resume (remove truthy guard)
+        setReadingMaterial(d.reading_material || "");
         if (!hasHistory) {
           // First load or no history — wiki-status handles metadata
-          setReadingMaterial(d.reading_material || "");
         } else {
           // Has history — use /resume metadata (more complete)
           if (d.mode) setMode(d.mode);
           if (d.current_chapter) {
             setChapter(d.current_chapter);
-            setChapterTitle(lang==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`);
+            const chLabel = lang==="zh"?`第 ${d.current_chapter} 章`:`Ch ${d.current_chapter}`;
+            setChapterTitle(chLabel);
+            document.title = `${chLabel} | 朽瓜`;
           }
           if (d.total_chapters) setTotal(d.total_chapters);
           if (d.wiki_checklist?.length) setWikiChecklist(d.wiki_checklist);
           if (d.current_wiki_id) setCurrentWikiId(d.current_wiki_id);
-          if (d.reading_material) setReadingMaterial(d.reading_material);
           if (d.chapter_concepts?.length) setConcepts(d.chapter_concepts);
           const s = d.status === "not_started" ? "select-mode" : d.status;
           setStatus(s);
@@ -342,7 +346,12 @@ export default function ReadPage() {
               })));
             }
             if (parsed.reading_material) setReadingMaterial(parsed.reading_material);
-            if (isSummary) { setChapterTitle(lang==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`); }
+            // Bug 3 fix: set title synchronously during streaming
+            if (isSummary) {
+              const chLabel = lang==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`;
+              setChapterTitle(chLabel);
+              document.title = `${chLabel} | 朽瓜`;
+            }
           } catch { /* non-critical */ }
         }
         if (full.includes("<!--CHAPTER_END")) {
@@ -384,13 +393,19 @@ export default function ReadPage() {
           }
 
           setChapterTitle("");
+          document.title = "阅读 | 朽瓜";
           setStreaming(false);
           setShowStartButton(true);
           loadState();
           return;
         }
       }
-      if (isSummary) { setChapterTitle(lang==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`); }
+      // Bug 3 fix: set title synchronously when first summary arrives
+      if (isSummary) {
+        const chLabel = lang==="zh"?`第 ${chapter} 章`:`Ch ${chapter}`;
+        setChapterTitle(chLabel);
+        document.title = `${chLabel} | 朽瓜`;
+      }
       setStreaming(false);
     }
   }
