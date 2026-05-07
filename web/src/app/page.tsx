@@ -432,14 +432,14 @@ export default function Landing() {
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-10">
             <h2 className="font-display text-3xl md:text-4xl font-bold tracking-tight text-ink">
-              {t("不止是笔记：Wiki over RAG", "More Than Notes: Wiki over RAG")}
+              {t("不止是笔记，是生长的 Wiki", "More Than Notes — A Living Wiki")}
             </h2>
           </div>
 
           <p className="text-sm text-ink-soft leading-relaxed text-center max-w-xl mx-auto mb-8">
             {t(
-              "Andrej Karpathy（前 Tesla AI 总监、OpenAI 联合创始人）提出了一个理念：与其每次向 AI 临时检索信息（RAG），不如让 AI 帮你构建一个持续生长的 Wiki。以下是他的原话：",
-              "Andrej Karpathy (ex-Tesla AI Director, OpenAI co-founder) proposed a radical idea: instead of ad-hoc AI retrieval (RAG), let AI build you a persistent, compounding Wiki. In his own words:"
+              "Andrej Karpathy（前 Tesla AI 总监、OpenAI 联合创始人）提出了「LLM Wiki」的理念：让 AI 帮你持续构建、维护一个结构化知识库，而不是每次都临时拼凑信息。以下是他的原话：",
+              "Andrej Karpathy (ex-Tesla AI Director, OpenAI co-founder) proposed \"LLM Wiki\": let AI continuously build and maintain a structured knowledge base for you, instead of piecing things together from scratch every time. In his own words:"
             )}
           </p>
 
