@@ -9,15 +9,17 @@ export default function Dashboard() {
   useEffect(() => { document.title = "分析看板 | 朽瓜"; }, []);
   useEffect(() => {
     fetch(API + "/api/analytics/dashboard?days=7", { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
+      .then(async r => { if (!r.ok) throw new Error("not authorized"); return r.json(); })
       .then(setData)
-      .catch(() => {});
+      .catch(() => setData({ error: true }));
   }, []);
 
   if (!data) return <div className="text-center py-20 text-ink-muted">加载中...</div>;
+  if ((data as any).error) return <div className="text-center py-20 text-ink-muted">需要管理员权限</div>;
 
-  const satisfactionRate = data.satisfaction.up + data.satisfaction.down > 0
-    ? Math.round(data.satisfaction.up / (data.satisfaction.up + data.satisfaction.down) * 100) + "%"
+  const sat = (data as any).satisfaction || { up: 0, down: 0 };
+  const satisfactionRate = sat.up + sat.down > 0
+    ? Math.round(sat.up / (sat.up + sat.down) * 100) + "%"
     : "-";
 
   return (
@@ -35,8 +37,8 @@ export default function Dashboard() {
       {/* Row 2: Satisfaction + Reading */}
       <div className="grid grid-cols-4 gap-4 mb-8">
         <MetricCard value={satisfactionRate} label="满意率" />
-        <MetricCard value={data.satisfaction.up} label="👍" color="text-green-600" />
-        <MetricCard value={data.satisfaction.down} label="👎" color="text-red-500" />
+        <MetricCard value={sat.up} label="👍" color="text-green-600" />
+        <MetricCard value={sat.down} label="👎" color="text-red-500" />
         <MetricCard value={Math.round(data.today_reading_minutes)} label="今日阅读(分钟)" unit="min" highlight />
       </div>
 
@@ -50,7 +52,7 @@ export default function Dashboard() {
       <div className="mb-8">
         <h2 className="font-semibold mb-3">事件分布</h2>
         <div className="space-y-2">
-          {data.events.length === 0 ? (
+          {(data.events || []).length === 0 ? (
             <p className="text-sm text-ink-muted">暂无事件</p>
           ) : data.events.map((e: any) => (
             <div key={e.event} className="flex items-center gap-3">
@@ -68,7 +70,7 @@ export default function Dashboard() {
       </div>
 
       {/* Trend chart (simple text-based) */}
-      {data.trend && data.trend.length > 0 && (
+      {(data as any).trend && data.trend.length > 0 && (
         <div className="mb-8">
           <h2 className="font-semibold mb-3">近7天事件趋势</h2>
           <div className="space-y-1">
