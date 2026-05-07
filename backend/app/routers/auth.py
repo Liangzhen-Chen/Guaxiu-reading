@@ -2,6 +2,7 @@
 import os
 import uuid
 import httpx
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Request
 from fastapi.security import HTTPBearer
 from sqlalchemy import select
@@ -56,10 +57,12 @@ async def register(request: Request, data: UserCreate, db: AsyncSession = Depend
         # 邮箱已存在 —— 返回相同的 201 状态码和消息体，防止邮箱枚举
         return {"message": "注册成功"}
     import random, string
+    now = datetime.now(timezone.utc)
     user = User(
         email=data.email,
         password_hash=hash_password(data.password),
         display_name=data.display_name or f"读者{''.join(random.choices(string.ascii_lowercase, k=5))}",
+        last_login_at=now,
     )
     db.add(user)
     await db.commit()
@@ -74,6 +77,8 @@ async def login(request: Request, data: UserCreate, db: AsyncSession = Depends(g
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="邮箱或密码错误")
+    user.last_login_at = datetime.now(timezone.utc)
+    await db.commit()
     token = create_token(str(user.id))
     return TokenResponse(access_token=token, user=UserResponse.model_validate(user))
 
@@ -127,12 +132,14 @@ async def wechat_login(data: WechatLoginRequest, db: AsyncSession = Depends(get_
     result = await db.execute(select(User).where(User.wechat_openid == openid))
     user = result.scalar_one_or_none()
 
+    now = datetime.now(timezone.utc)
     if user is None:
         user = User(
             wechat_openid=openid,
             wechat_unionid=wx_data.get("unionid"),
             display_name=data.nickname or f"微信用户{openid[-6:]}",
             avatar_url=data.avatar_url,
+            last_login_at=now,
         )
         db.add(user)
         await db.commit()
@@ -143,6 +150,7 @@ async def wechat_login(data: WechatLoginRequest, db: AsyncSession = Depends(get_
             user.display_name = data.nickname
         if data.avatar_url:
             user.avatar_url = data.avatar_url
+        user.last_login_at = now
         await db.commit()
 
     token = create_token(str(user.id))

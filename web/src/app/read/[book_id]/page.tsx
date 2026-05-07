@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { API } from "../../config";
 import { showToast } from "../../toast";
@@ -15,6 +15,44 @@ export default function ReadPage() {
   const { book_id } = useParams<{ book_id: string }>();
   const router = useRouter();
   const { lang } = useLang();
+
+  // ── Reading session tracking ──
+  const readingSessionStart = useRef(Date.now());
+  const bookIdRef = useRef(book_id);
+  const trackReadingSession = useCallback(() => {
+    const elapsed = Date.now() - readingSessionStart.current;
+    if (elapsed > 3000) {
+      try {
+        fetch(`${API}/api/analytics/event`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
+          body: JSON.stringify({
+            event: "reading_session",
+            duration_ms: elapsed,
+            page: `/read/${bookIdRef.current}`,
+          }),
+          keepalive: true,
+        });
+      } catch { /* best-effort */ }
+    }
+  }, []);
+  useEffect(() => {
+    readingSessionStart.current = Date.now();
+    bookIdRef.current = book_id;
+    return () => { trackReadingSession(); };
+  }, [book_id, trackReadingSession]);
+  // Also track on page visibility change (tab switch / background)
+  useEffect(() => {
+    const handleVis = () => {
+      if (document.hidden) {
+        trackReadingSession();
+        readingSessionStart.current = Date.now();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVis);
+    return () => document.removeEventListener("visibilitychange", handleVis);
+  }, [trackReadingSession]);
+
   const [status, setStatus] = useState("loading");
   const [mode, setMode] = useState("quick");
   const [chapter, setChapter] = useState(1);
