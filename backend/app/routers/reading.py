@@ -218,9 +218,12 @@ async def reading_chat(
         wiki_checklist = ch_wikis.get("wikis", [])
 
     current_wiki_id = progress.current_wiki_id
-    if not current_wiki_id and wiki_checklist:
+    # Reset to first wiki if: no current wiki, or current wiki not in this chapter's checklist
+    wiki_ids = {w.get("id") for w in wiki_checklist} if wiki_checklist else set()
+    if (not current_wiki_id or current_wiki_id not in wiki_ids) and wiki_checklist:
         current_wiki_id = wiki_checklist[0].get("id", "")
         progress.current_wiki_id = current_wiki_id
+        progress.completed_wikis = []
         await db.commit()
 
     # Get conversation history
