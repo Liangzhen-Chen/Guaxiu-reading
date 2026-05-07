@@ -558,7 +558,7 @@ export default function ReadPage() {
   const progress = total > 0 ? Math.round((chapter / total) * 100) : 0;
 
   return (
-    <div className="px-6 pb-20 lg:pb-0">
+    <div className="px-6 pb-20 lg:pb-0 max-w-full overflow-hidden">
       {error && (
         <div className="mb-4 px-4 py-3 rounded-xl bg-surface-red border border-color-danger/20 text-sm text-color-danger">{error}</div>
       )}
@@ -606,7 +606,7 @@ export default function ReadPage() {
       <div className="flex gap-3">
         {/* LEFT: Wiki Checklist */}
         {showWiki && (
-        <div className="w-48 shrink-0">
+        <div className="w-1/6 shrink-0 min-w-[160px]">
           <WikiChecklist
             wikiChecklist={wikiChecklist}
             currentWikiId={currentWikiId}
@@ -619,7 +619,7 @@ export default function ReadPage() {
         )}
         {/* CENTER: Reading Material */}
         {showReading && (
-        <div className="w-96 shrink-0">
+        <div className="w-1/4 shrink-0 min-w-[220px]">
           <ReadingMaterial
             readingMaterial={readingMaterial}
             lang={lang}
@@ -629,7 +629,7 @@ export default function ReadPage() {
         )}
         {/* RIGHT: Chat / Assessment */}
         {showChat && (
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-hidden">
           {status === "assessment" ? (
             <AssessmentPanel
               status={status}
