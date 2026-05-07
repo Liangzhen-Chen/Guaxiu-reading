@@ -409,7 +409,7 @@ async def get_wiki_status(
     chapter = max(progress.current_chapter, 1) if progress else 1
     wiki_checklist = []
     if progress:
-        wiki_checklist = await build_wiki_checklist(book, chapter, progress, db)
+        wiki_checklist = build_wiki_checklist(book, chapter, progress)
 
     return {
         "wiki_checklist": wiki_checklist,
