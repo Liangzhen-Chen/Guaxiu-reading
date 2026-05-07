@@ -405,11 +405,11 @@ async def get_wiki_status(
     book = await _get_book(db, book_id, user.id)
     progress = book.progress
 
-    from app.services.chapter_service import _build_wiki_checklist
+    from app.services.chapter_service import build_wiki_checklist
     chapter = max(progress.current_chapter, 1) if progress else 1
     wiki_checklist = []
     if progress:
-        wiki_checklist = await _build_wiki_checklist(book, chapter, progress, db)
+        wiki_checklist = await build_wiki_checklist(book, chapter, progress, db)
 
     return {
         "wiki_checklist": wiki_checklist,
