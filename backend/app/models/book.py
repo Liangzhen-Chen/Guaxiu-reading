@@ -61,7 +61,7 @@ class Book(Base):
 
     owner: Mapped["User"] = relationship("User", back_populates="books")
     progress: Mapped["ReadingProgress | None"] = relationship(
-        "ReadingProgress", back_populates="book", uselist=False
+        "ReadingProgress", back_populates="book", uselist=False, passive_deletes=True
     )
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="book", passive_deletes=True
