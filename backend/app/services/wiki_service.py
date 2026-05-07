@@ -1,5 +1,6 @@
 """Wiki 知识库服务 —— 概念创建、关联、搜索"""
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.wiki import WikiEntry
 
@@ -40,16 +41,44 @@ async def create_entry(
 async def search_entries(
     db: AsyncSession, user_id: str, query: str, limit: int = 20
 ) -> list[WikiEntry]:
-    """全文搜索 Wiki 条目"""
+    """分词搜索 Wiki 条目。
+
+    支持中文分词：将查询按空格切分成多个词，各词分别在
+    concept_name 和 ai_definition 中查找；同时使用 pg_trgm
+    similarity() 做模糊匹配并按相关性降序排列。
+    """
     if not query or not query.strip():
         return []
+
+    terms = [t.strip() for t in query.split() if t.strip()]
+    if not terms:
+        return []
+
+    # 对每个词在 concept_name 和 ai_definition 中做 ILIKE 匹配
+    ilike_conditions = []
+    for term in terms:
+        ilike_conditions.append(WikiEntry.concept_name.ilike(f"%{term}%"))
+        ilike_conditions.append(WikiEntry.ai_definition.ilike(f"%{term}%"))
+
+    # 合并 trigram 模糊匹配（覆盖拼写/近似查询）
     result = await db.execute(
         select(WikiEntry)
+        .options(selectinload(WikiEntry.book))
         .where(
             WikiEntry.user_id == user_id,
-            WikiEntry.concept_name.ilike(f"%{query}%")
+            or_(
+                *ilike_conditions,
+                func.similarity(WikiEntry.concept_name, query) > 0.2,
+                func.similarity(WikiEntry.ai_definition, query) > 0.2,
+            )
         )
-        .order_by(WikiEntry.updated_at.desc())
+        .order_by(
+            func.greatest(
+                func.coalesce(func.similarity(WikiEntry.concept_name, query), 0),
+                func.coalesce(func.similarity(WikiEntry.ai_definition, query), 0),
+            ).desc(),
+            WikiEntry.updated_at.desc()
+        )
         .limit(limit)
     )
     return list(result.scalars().all())

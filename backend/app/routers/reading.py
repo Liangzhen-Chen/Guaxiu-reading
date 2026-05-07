@@ -209,7 +209,8 @@ async def reading_chat(
         await db.commit()
 
     chapter = progress.current_chapter
-    language = progress.language or "zh"
+    # Use book's detected language for AI conversation, fall back to user preference
+    language = book.language or progress.language or "zh"
 
     # Wiki list from preprocess
     wiki_checklist = []

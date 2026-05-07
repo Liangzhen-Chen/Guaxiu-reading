@@ -100,19 +100,23 @@ export default function WikiPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {entries.map(e => (
             <div key={e.id} className="rounded-xl p-5 bg-white border border-border hover:border-ink-muted transition-colors">
-              <div className="flex items-center gap-2 mb-1">
-                {(() => {
-                  const st = e.entry_subtype || e.entry_type || "concept";
-                  const label = st === "viewpoint" ? "观点" : st === "case" ? "案例" : "概念";
-                  const colors = st === "viewpoint" ? "bg-purple-50 text-purple-700" :
-                                 st === "case" ? "bg-blue-50 text-blue-700" :
-                                 "bg-amber-50 text-amber-700";
-                  return <span className={"text-xs px-2 py-0.5 rounded "+colors}>{label}</span>;
-                })()}
-                {e.book_title && (
-                  <span className="text-xs text-ink-soft truncate max-w-[200px]">{e.book_title}</span>
+              <div className="mb-1">
+                <div className="flex items-center gap-2 mb-0.5">
+                  {(() => {
+                    const st = e.entry_subtype || e.entry_type || "concept";
+                    const label = st === "viewpoint" ? "观点" : st === "case" ? "案例" : "概念";
+                    const colors = st === "viewpoint" ? "bg-purple-50 text-purple-700" :
+                                   st === "case" ? "bg-blue-50 text-blue-700" :
+                                   "bg-amber-50 text-amber-700";
+                    return <span className={"text-xs px-2 py-0.5 rounded "+colors}>{label}</span>;
+                  })()}
+                </div>
+                {(e.book_title || e.chapter_index != null) && (
+                  <div className="text-xs text-ink-soft leading-relaxed space-y-0.5">
+                    {e.book_title && <div>来源：{e.book_title}</div>}
+                    {e.chapter_index != null && <div>章节：第{e.chapter_index}章</div>}
+                  </div>
                 )}
-                {e.chapter_index != null && <span className="text-xs text-ink-soft">· 第{e.chapter_index}章</span>}
               </div>
               <h3 className="font-display text-lg font-semibold mb-1">{e.concept_name}</h3>
               <p className="text-sm text-ink-soft leading-relaxed">{e.ai_definition}</p>
