@@ -35,16 +35,6 @@ export default function ReadPage() {
   const [showModeSwitch, setShowModeSwitch] = useState(false);
   const [ratedMsgs, setRatedMsgs] = useState<Record<number, "up"|"down">>({});
   const [mobilePanel, setMobilePanel] = useState<"chat" | "wiki" | "reading">("chat");
-  // Desktop always shows all 3 columns; mobile shows 1 at a time
-  const [forceDesktop, setForceDesktop] = useState(true);
-  useEffect(() => {
-    const check = () => setForceDesktop(window.innerWidth >= 1024);
-    check(); window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-  const showWiki = forceDesktop || mobilePanel === "wiki";
-  const showReading = forceDesktop || mobilePanel === "reading";
-  const showChat = forceDesktop || mobilePanel === "chat";
 
   // P5-19: Chapter celebration state
   const [showCelebration, setShowCelebration] = useState(false);
@@ -605,8 +595,7 @@ export default function ReadPage() {
 
       <div className="flex gap-3">
         {/* LEFT: Wiki Checklist */}
-        {showWiki && (
-        <div className="w-40 shrink-0">
+        <div className="w-40 shrink-0 hidden lg:block">
           <WikiChecklist
             wikiChecklist={wikiChecklist}
             currentWikiId={currentWikiId}
@@ -616,19 +605,17 @@ export default function ReadPage() {
             status={status}
           />
         </div>
-        )}
+
         {/* CENTER: Reading Material */}
-        {showReading && (
-        <div className="w-72 shrink-0">
+        <div className="w-72 shrink-0 hidden md:block">
           <ReadingMaterial
             readingMaterial={readingMaterial}
             lang={lang}
             mode={mode}
           />
         </div>
-        )}
+
         {/* RIGHT: Chat / Assessment */}
-        {showChat && (
         <div className="flex-1 min-w-0">
           {status === "assessment" ? (
             <AssessmentPanel
@@ -661,7 +648,6 @@ export default function ReadPage() {
             />
           )}
         </div>
-        )}
       </div>
 
       {/* P3-9: Mobile bottom navigation */}
