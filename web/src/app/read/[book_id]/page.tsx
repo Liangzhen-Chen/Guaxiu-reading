@@ -593,9 +593,9 @@ export default function ReadPage() {
         </div>
       </div>
 
-      <div className="grid gap-3" style={{gridTemplateColumns: "192px 384px 1fr"}}>
+      <div className="flex gap-3">
         {/* LEFT: Wiki Checklist */}
-        <div className="hidden md:block overflow-auto">
+        <div className="w-48 shrink-0">
           <WikiChecklist
             wikiChecklist={wikiChecklist}
             currentWikiId={currentWikiId}
@@ -607,7 +607,7 @@ export default function ReadPage() {
         </div>
 
         {/* CENTER: Reading Material */}
-        <div className="hidden md:block overflow-auto">
+        <div className="w-96 shrink-0">
           <ReadingMaterial
             readingMaterial={readingMaterial}
             lang={lang}
@@ -616,7 +616,7 @@ export default function ReadPage() {
         </div>
 
         {/* RIGHT: Chat / Assessment */}
-        <div className="overflow-auto">
+        <div className="flex-1 min-w-0">
           {status === "assessment" ? (
             <AssessmentPanel
               status={status}
