@@ -371,9 +371,6 @@ export default function Landing() {
               &rdquo;
             </p>
           </div>
-          <p className="mt-4 text-sm text-ink-muted text-right">
-            &mdash; {t("Andrej Karpathy 的理念", "Inspired by Andrej Karpathy")}
-          </p>
 
           <div className="mt-10 grid gap-6 sm:grid-cols-3 text-center">
             {[
