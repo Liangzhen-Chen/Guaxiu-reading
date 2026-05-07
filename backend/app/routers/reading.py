@@ -158,9 +158,9 @@ async def reading_chat(
 
     # Allow /next even during assessment (skip chapter from any state)
     if data.message.strip() == "/next":
+        ch = max(progress.current_chapter, 1) if progress else 1
         if progress:
             total_ch = book.chapter_count or 1
-            ch = max(progress.current_chapter, 1)
             if ch >= total_ch:
                 progress.status = "completed"
             else:
@@ -169,8 +169,10 @@ async def reading_chat(
                 progress.current_wiki_id = None
                 progress.completed_wikis = []
             await db.commit()
+        # Include wiki data directly so frontend can show import modal without extra API call
+        wiki_data = _get_chapter_wikis(book, ch)
         async def gen():
-            yield "<!--CHAPTER_END-->"
+            yield f"<!--CHAPTER_END:{json.dumps(wiki_data, ensure_ascii=False, separators=(',', ':'))}-->"
         return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
 
     if not progress or progress.status not in ("reading", "paused"):
@@ -257,6 +259,8 @@ async def reading_chat(
     history.append({"role": "user", "content": data.message})
 
     # /next shortcut: skip AI call, directly advance chapter
+    # NOTE: This is dead code since the early /next handler above catches all /next messages.
+    # Kept as a safety fallback.
     if data.message.strip() == "/next":
         async def generate():
             db2 = async_session()
@@ -276,7 +280,8 @@ async def reading_chat(
                         progress2.current_wiki_id = None
                         progress2.completed_wikis = []
                     await db2.commit()
-                yield "\n\n<!--CHAPTER_END-->"
+                wiki_data = _get_chapter_wikis(book, chapter)
+                yield f"\n\n<!--CHAPTER_END:{json.dumps(wiki_data, ensure_ascii=False, separators=(',', ':'))}-->"
             finally:
                 await db2.close()
         return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
@@ -353,24 +358,32 @@ async def reading_chat(
     system_msgs = [{"role": "system", "content": f"{p4_prompt}{no_wiki_note}{force_skip_note}"}]
     messages = system_msgs + history
 
-    # 流式对话（先收集完整响应，解析JSON，再返回文本）
+    # True streaming: yield tokens immediately while accumulating for parsing
     async def generate():
-        # Collect full response from AI
         full_response = ""
         async for token in chat_stream(messages, temperature=0.5, max_tokens=4096, timeout=httpx.Timeout(30.0, read=120.0)):
             full_response += token
+            yield token  # Stream immediately — user sees AI response in real-time
 
-        # Parse JSON response
+        # After stream ends: parse V4_META from accumulated response
+        ai_text = full_response
+        parsed = {"ai_response": full_response, "current_wiki": {"id": current_wiki_id, "name": ""}, "reading_material": "", "wiki_transition": False, "transition_message": ""}
         try:
             from app.services.json_validator import extract_json
-            parsed = extract_json(full_response)
-            ai_text = parsed.get("ai_response", full_response)
+            meta_match = _re.search(r'<!--V4_META:([\s\S]*?)-->', full_response)
+            if meta_match:
+                parsed = json.loads(meta_match.group(1))
+                ai_text = full_response[:full_response.index('<!--V4_META:')].strip()
+            else:
+                # Fallback: parse full response as JSON (old format)
+                parsed = extract_json(full_response)
+                ai_text = parsed.get("ai_response", full_response)
         except Exception:
-            parsed = {"ai_response": full_response, "current_wiki": {"id": current_wiki_id, "name": ""}, "reading_material": "", "wiki_transition": False, "transition_message": ""}
-            ai_text = full_response
+            pass  # Use defaults above
 
-        # Sanitize: strip any CHAPTER_END marker that could leak from AI response
+        # Sanitize CHAPTER_END leaks
         CHAPTER_END_MARKER = "<!--CHAPTER_END-->"
+        ai_signaled_chapter_end = CHAPTER_END_MARKER in full_response
         if CHAPTER_END_MARKER in ai_text:
             ai_text = ai_text.replace(CHAPTER_END_MARKER, "").strip()
 
@@ -403,9 +416,16 @@ async def reading_chat(
                             progress2.completed_wikis = done
                         progress2.current_wiki_id = new_wiki_id
 
-                # Auto chapter end: all wikis completed, or fallback to round count
+                # Auto chapter end: AI signaled, all wikis completed, wiki_transition past last, or fallback
+                new_id = parsed.get("current_wiki", {}).get("id", "")
+                wiki_transition_to_end = (
+                    wiki_checklist and parsed.get("wiki_transition")
+                    and new_id == wiki_checklist[-1].get("id", "")
+                )
                 all_done = (
-                    (wiki_checklist and len(progress2.completed_wikis or []) >= len(wiki_checklist))
+                    ai_signaled_chapter_end
+                    or wiki_transition_to_end
+                    or (wiki_checklist and len(progress2.completed_wikis or []) >= len(wiki_checklist))
                     or (not wiki_checklist and (progress2.total_rounds or 0) > 10)
                 )
                 if all_done:
@@ -424,12 +444,11 @@ async def reading_chat(
         finally:
             await db2.close()
 
-        # Yield to user after DB write succeeded
-        yield ai_text
+        # Yield metadata markers after DB save (ai_text was already streamed)
         yield f"\n<!--V4_META:{json.dumps(parsed, ensure_ascii=False, separators=(',', ':'))}-->"
 
         if all_done:
-            yield "\n\n<!--CHAPTER_END-->"
+            yield f"\n\n<!--CHAPTER_END:{json.dumps(_get_chapter_wikis(book, chapter), ensure_ascii=False, separators=(',', ':'))}-->"
 
     return StreamingResponse(generate(), media_type="text/plain; charset=utf-8")
 
@@ -599,7 +618,8 @@ async def chapter_end(
     # 调用P5
     from app.services.llm_service import chat as chat_nonstream
     from app.services.json_validator import extract_json
-    p5_prompt = _p("p5_confirm", "zh").format(
+    lang = book.progress.language if book.progress and book.progress.language else "zh"
+    p5_prompt = _p("p5_confirm", lang).format(
         chapter_index=chapter,
         original_wikis=json.dumps(orig_wikis, ensure_ascii=False),
         conversation_context=json.dumps(conv, ensure_ascii=False),
@@ -627,6 +647,21 @@ def _build_wiki_checklist(book, chapter: int, progress) -> list:
                     status = "done"
             items.append({"id": wiki_id, "name": w.get("name", ""), "status": status})
     return items
+
+
+def _get_chapter_wikis(book: Book, chapter: int) -> dict:
+    """Get raw wiki data for a chapter (for CHAPTER_END inline response)."""
+    wikis = []
+    if book.preprocess_progress:
+        ch_wikis = book.preprocess_progress.get("chapter_wikis", {}).get(str(chapter), {})
+        for w in ch_wikis.get("wikis", []):
+            wikis.append({
+                "name": w.get("name", ""),
+                "content": w.get("content", w.get("description", "")),
+                "type": w.get("type", "concept"),
+                "quotes": w.get("quotes", []),
+            })
+    return {"wikis": wikis}
 
 
 # ── helpers ──

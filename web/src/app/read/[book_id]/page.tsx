@@ -248,7 +248,7 @@ export default function ReadPage() {
         // v4.0: Extract V4_META and CHAPTER_END markers from streamed text
         const metaMatch = full.match(/<!--V4_META:([\s\S]*?)-->/);
         const displayText = (metaMatch ? full.replace(/<!--V4_META:[\s\S]*?-->/, '') : full)
-          .replace(/<!--CHAPTER_END-->/g, '').trim();
+          .replace(/<!--CHAPTER_END[^>]*-->/g, '').trim();
         setMessages(prev => { const copy = [...prev]; copy[copy.length-1] = { role: "assistant", content: displayText }; return copy; });
         // Parse wiki metadata when complete
         if (metaMatch) {
@@ -269,25 +269,49 @@ export default function ReadPage() {
             // Meta parse failure — non-critical, continue
           }
         }
-        if (full.includes("<!--CHAPTER_END-->")) {
+        if (full.includes("<!--CHAPTER_END")) {
           setReadingMaterial("");
           setMessages([{ role: "assistant", content: L()==="zh"?"🎉 本章完成！你已掌握本章概念。":"🎉 Chapter complete! You've mastered the concepts." }]);
           setChapterTitle("");
           setStreaming(false);
           setShowStartButton(true);  // show button for new chapter
-          // Fetch chapter-end wiki list and show import modal
-          try {
-            const wRes = await fetch(`${API}/api/reading/chapter-end`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
-              body: JSON.stringify({ book_id, chapter_index: chapter }),
-            });
-            if (wRes.ok) {
-              const wData = await wRes.json();
-              if (wData.wikis?.length) { setWikiSelection({ wikis: wData.wikis }); }
+          // Parse inline wiki data from CHAPTER_END marker
+          const ceMatch = full.match(/<!--CHAPTER_END:([\s\S]*?)-->/);
+          if (ceMatch) {
+            try {
+              const ceData = JSON.parse(ceMatch[1]);
+              if (ceData.wikis?.length) { setWikiSelection({ wikis: ceData.wikis }); }
+            } catch {
+              // Fallback: fetch from API
+              try {
+                const wRes = await fetch(`${API}/api/reading/chapter-end`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
+                  body: JSON.stringify({ book_id, chapter_index: chapter }),
+                });
+                if (wRes.ok) {
+                  const wData = await wRes.json();
+                  if (wData.wikis?.length) { setWikiSelection({ wikis: wData.wikis }); }
+                }
+              } catch {
+                showToast("章节结束处理失败", "error");
+              }
             }
-          } catch {
-            showToast("章节结束处理失败", "error");
+          } else {
+            // No inline data, fetch from API
+            try {
+              const wRes = await fetch(`${API}/api/reading/chapter-end`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${T()}` },
+                body: JSON.stringify({ book_id, chapter_index: chapter }),
+              });
+              if (wRes.ok) {
+                const wData = await wRes.json();
+                if (wData.wikis?.length) { setWikiSelection({ wikis: wData.wikis }); }
+              }
+            } catch {
+              showToast("章节结束处理失败", "error");
+            }
           }
           loadState();
           return;
