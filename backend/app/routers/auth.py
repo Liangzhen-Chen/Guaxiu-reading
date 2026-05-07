@@ -67,7 +67,8 @@ async def register(request: Request, data: UserCreate, db: AsyncSession = Depend
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    return {"message": "注册成功"}
+    token = create_token(str(user.id))
+    return {"message": "注册成功", "access_token": token}
 
 
 @router.post("/login", response_model=TokenResponse)
