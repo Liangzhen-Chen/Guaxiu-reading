@@ -302,37 +302,106 @@ export default function Landing() {
   return (
     <div className="overflow-hidden">
       {/* ---- HERO ---- */}
-      <section className="hero-glow relative pt-8 pb-16 md:pt-16 md:pb-24 text-center">
-        <div className="relative z-10">
+      <section className="hero-glow relative pt-8 pb-12 md:pt-16 md:pb-20">
+        <div className="relative z-10 max-w-6xl mx-auto">
           {/* Warm label */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-amber-deep bg-surface-amber/70 mb-6">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-deep/60" />
-            {t("AI 苏格拉底式阅读", "AI Socratic Reading")}
+          <div className="text-center md:text-left mb-6">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-amber-deep bg-surface-amber/70">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-deep/60" />
+              {t("AI 苏格拉底式阅读", "AI Socratic Reading")}
+            </span>
           </div>
 
-          <h1 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-ink leading-[1.1] max-w-4xl mx-auto">
-            {t("不是你看书，是 AI 带着你读", "You Don't Read Alone — AI Reads With You")}
-          </h1>
-
-          <p className="mt-5 text-base sm:text-lg md:text-xl max-w-2xl mx-auto leading-relaxed text-ink-soft">
-            {t(
-              "苏格拉底式追问，逐章拆解。读过的每一本书，沉淀为你的个人 Wiki 知识库。",
-              "Socratic questioning, chapter by chapter. Every book you read becomes your personal Wiki knowledge base."
-            )}
-          </p>
-
-          {/* CTA */}
-          <div className="mt-10 flex flex-col items-center gap-4">
-            {!loading && renderCTA("large")}
-            {!loading && !loggedIn && (
-              <p className="text-xs text-ink-muted">
-                {t("无需信用卡 · 免费开始", "No credit card required")}
+          <div className="flex flex-col md:flex-row gap-8 md:gap-12 items-start">
+            {/* LEFT: Title + Pain points + Selling points */}
+            <div className="flex-1 min-w-0">
+              <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-ink leading-[1.15]">
+                {t("不是你看书，是 AI 带着你读", "You Don't Read Alone — AI Reads With You")}
+              </h1>
+              <p className="mt-4 text-sm sm:text-base md:text-lg leading-relaxed text-ink-soft">
+                {t(
+                  "苏格拉底式追问，逐章拆解。读过的每一本书，沉淀为你的个人 Wiki 知识库。",
+                  "Socratic questioning, chapter by chapter. Every book you read becomes your personal Wiki knowledge base."
+                )}
               </p>
-            )}
+
+              {/* Pain points + Selling points side by side on mobile-stacked */}
+              <div className="mt-6 flex flex-col sm:flex-row gap-4 sm:gap-8">
+                {/* Pain points */}
+                <div className="flex-1 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-2">
+                    {t("你是否有这些困扰", "Sound Familiar?")}
+                  </p>
+                  <div className="space-y-1.5">
+                    {[
+                      { zh: "读完就忘，不知道留下了什么", en: "Finish a book, remember nothing" },
+                      { zh: "一个人读没人反馈，理解对错不知道", en: "No feedback — am I even understanding this right?" },
+                      { zh: "做笔记太累，回头也找不到", en: "Note-taking is exhausting and impossible to revisit" },
+                    ].map((item, i) => (
+                      <p key={i} className="text-xs text-ink-soft flex items-start gap-1.5">
+                        <span className="text-color-danger shrink-0 mt-0.5">&#10005;</span>
+                        {t(item.zh, item.en)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                {/* Selling points */}
+                <div className="flex-1 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-2">
+                    {t("朽瓜如何解决", "How Xiugua Helps")}
+                  </p>
+                  <div className="space-y-1.5">
+                    {[
+                      { zh: "AI 逐章追问，像导师一样带你深入", en: "AI questions you chapter by chapter, like a mentor" },
+                      { zh: "自动沉淀 Wiki，读完留下一套知识库", en: "Auto-builds a Wiki — every book leaves a knowledge base" },
+                      { zh: "快速 15min / 深度 40min，两种节奏", en: "Quick 15min overview or deep 40min dive" },
+                    ].map((item, i) => (
+                      <p key={i} className="text-xs text-ink-soft flex items-start gap-1.5">
+                        <span className="text-color-success shrink-0 mt-0.5">&#10003;</span>
+                        {t(item.zh, item.en)}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* CTA */}
+              <div className="mt-6 flex items-center gap-4">
+                {!loading && renderCTA("default")}
+                {!loading && !loggedIn && (
+                  <p className="text-xs text-ink-muted">{t("无需信用卡 · 免费开始", "No credit card required")}</p>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT: Flow diagram */}
+            <div className="hidden md:flex w-72 shrink-0 flex-col items-center gap-3 p-6 rounded-2xl bg-surface-amber/30 border border-amber-deep/10">
+              <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted mb-1">
+                {t("三步开始", "How It Works")}
+              </p>
+              <div className="flex flex-col items-center gap-2 w-full">
+                {[
+                  { zh: "上传一本书", en: "Upload a book" },
+                  { zh: "AI 预解析 Wiki", en: "AI parses & builds Wiki" },
+                  { zh: "逐章对话阅读", en: "Chapter-by-chapter dialogue" },
+                ].map((step, i) => (
+                  <div key={i} className="flex items-center gap-3 w-full">
+                    <span className="step-num !w-8 !h-8 text-xs">{i + 1}</span>
+                    <span className="text-xs text-ink-soft">{t(step.zh, step.en)}</span>
+                    {i < 2 && <span className="text-ink-muted text-xs ml-auto">&darr;</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 pt-3 border-t border-amber-deep/10 w-full text-center">
+                <span className="text-xs font-semibold text-amber-deep">
+                  {t("→ Wiki 知识库", "→ Your Wiki")}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* Quick highlights row */}
-          <div className="mt-12 flex flex-wrap justify-center gap-x-8 gap-y-2 text-xs text-ink-muted">
+          {/* Format highlights */}
+          <div className="mt-10 flex flex-wrap justify-center md:justify-start gap-x-8 gap-y-2 text-xs text-ink-muted">
             <span>{t("ePub / PDF / TXT", "ePub / PDF / TXT")}</span>
             <span className="hidden sm:inline">&middot;</span>
             <span>{t("自动章节解析", "Auto chapter parsing")}</span>
@@ -358,19 +427,43 @@ export default function Landing() {
         {renderFeatureCards()}
       </RevealWrap>
 
-      {/* ---- KARPATHY PHILOSOPHY ---- */}
+      {/* ---- KARPATHY LLM WIKI ---- */}
       <RevealWrap as="section" className="py-16 md:py-24">
         <div className="max-w-3xl mx-auto">
-          <div className="quote-amber">
-            <p className="font-display text-xl md:text-2xl leading-relaxed text-ink">
-              &ldquo;
-              {t(
-                "读书的价值不在于 '读过'，而在于读完后留下了什么。每一本书都应该让你带走一套结构化的概念——互相连接、随时可检索。",
-                "The value of reading isn't in having read, but in what you take away. Every book should leave you with a set of structured concepts — connected and retrievable."
-              )}
-              &rdquo;
+          <div className="text-center mb-10">
+            <h2 className="font-display text-3xl md:text-4xl font-bold tracking-tight text-ink">
+              {t("不止是笔记：Wiki over RAG", "More Than Notes: Wiki over RAG")}
+            </h2>
+          </div>
+
+          <p className="text-sm text-ink-soft leading-relaxed text-center max-w-xl mx-auto mb-8">
+            {t(
+              "Andrej Karpathy（前 Tesla AI 总监、OpenAI 联合创始人）提出了一个理念：与其每次向 AI 临时检索信息（RAG），不如让 AI 帮你构建一个持续生长的 Wiki。以下是他的原话：",
+              "Andrej Karpathy (ex-Tesla AI Director, OpenAI co-founder) proposed a radical idea: instead of ad-hoc AI retrieval (RAG), let AI build you a persistent, compounding Wiki. In his own words:"
+            )}
+          </p>
+
+          <div className="quote-amber space-y-5 mt-6">
+            <p className="font-display text-lg md:text-xl leading-relaxed text-ink">
+              &ldquo;The LLM <strong className="font-bold">incrementally builds and maintains a persistent wiki</strong> — a structured, interlinked collection of markdown files. The knowledge is compiled once and then <em>kept current</em>. The wiki is a <strong className="font-bold">persistent, compounding artifact</strong>. The wiki keeps getting richer with every source you add.&rdquo;
+            </p>
+            <p className="text-sm text-ink-soft">
+              &ldquo;You never (or rarely) write the wiki yourself. <strong className="font-bold">The LLM writes and maintains all of it.</strong> Obsidian is the IDE; the LLM is the programmer; the wiki is the codebase.&rdquo;
+            </p>
+            <p className="text-sm text-ink-soft">
+              &ldquo;Humans abandon wikis because the maintenance burden grows faster than the value. LLMs don't get bored, don't forget to update a cross-reference. <strong className="font-bold">The human's job is to curate sources, direct the analysis, ask good questions. The LLM's job is everything else.</strong>&rdquo;
+            </p>
+            <p className="text-sm text-ink-soft">
+              &ldquo;The tedious part of maintaining a knowledge base is not the reading or the thinking — <strong className="font-bold">it's the bookkeeping.</strong>&rdquo;
             </p>
           </div>
+
+          <p className="mt-8 text-xs text-ink-muted text-center">
+            {t(
+              "—— Andrej Karpathy, \"LLM Wiki\" (2025)",
+              "— Andrej Karpathy, \"LLM Wiki\" (2025)"
+            )}
+          </p>
 
           <div className="mt-10 grid gap-6 sm:grid-cols-3 text-center">
             {[
@@ -387,10 +480,10 @@ export default function Landing() {
                 desc_en: "Auto-linked across chapters",
               },
               {
-                label_zh: "导出知识库",
-                label_en: "Exportable",
-                desc_zh: "完整 Wiki 可导出为知识库",
-                desc_en: "Export your complete Wiki",
+                label_zh: "持续生长",
+                label_en: "Compounding",
+                desc_zh: "每本书都在丰富你的知识库",
+                desc_en: "Every book enriches your knowledge base",
               },
             ].map((item, i) => (
               <div key={i} className="p-5">
@@ -404,13 +497,6 @@ export default function Landing() {
               </div>
             ))}
           </div>
-
-          <p className="mt-10 text-sm leading-relaxed text-ink-soft text-center max-w-xl mx-auto">
-            {t(
-              "朽瓜的 Wiki 不是传统的笔记系统。它是一个自动生长的知识图谱——AI 帮你提取、关联、整理，你只需专注思考。",
-              "Xiugua's Wiki is not a traditional note-taking system. It's an auto-growing knowledge graph — AI extracts, links, and organizes while you focus on thinking."
-            )}
-          </p>
         </div>
       </RevealWrap>
 
