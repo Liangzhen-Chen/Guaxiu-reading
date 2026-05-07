@@ -155,6 +155,24 @@ async def reading_chat(
     """v4.0: Wiki-based reading loop (P4)。从预生成 Wiki 清单读取，JSON 输出分发三栏。"""
     book = await _get_book(db, data.book_id, user.id)
     progress = book.progress
+
+    # Allow /next even during assessment (skip chapter from any state)
+    if data.message.strip() == "/next":
+        if progress:
+            total_ch = book.chapter_count or 1
+            ch = max(progress.current_chapter, 1)
+            if ch >= total_ch:
+                progress.status = "completed"
+            else:
+                progress.current_chapter = ch + 1
+                progress.status = "paused"
+                progress.current_wiki_id = None
+                progress.completed_wikis = []
+            await db.commit()
+        async def gen():
+            yield "<!--CHAPTER_END-->"
+        return StreamingResponse(gen(), media_type="text/plain; charset=utf-8")
+
     if not progress or progress.status not in ("reading", "paused"):
         raise HTTPException(status_code=400, detail="请先选择阅读模式")
 
