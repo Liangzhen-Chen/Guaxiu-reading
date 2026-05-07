@@ -102,6 +102,7 @@ async def assessment(
         result = json.loads(ai_response)
         if result.get("assessment_complete"):
             assessment_complete = True
+            progress = book.progress
             if progress:
                 progress.status = "reading"
                 progress.assessment_result = json.dumps(
