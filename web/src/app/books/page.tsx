@@ -108,9 +108,21 @@ export default function BooksPage() {
         return;
       }
       if (!presignRes.ok) {
-        const msg = await (presignRes as Response).text().catch(() => "");
-        setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
-        showToast("上传配置失败: " + (msg || "请稍后重试"), "error");
+        // COS presign failed, fall back to direct backend upload
+        console.log("[books] COS presign failed, falling back to direct upload");
+        setUpStep("上传中 (直传)");
+        const form = new FormData(); form.append("file", f);
+        const directRes = await api(API + "/api/books/upload", { method: "POST", body: form });
+        if (directRes.status === 401) { localStorage.removeItem("token"); router.push("/login"); return; }
+        if (!directRes.ok) {
+          const msg = await (directRes as Response).text().catch(() => "");
+          setUpStatus("error"); setTimeout(() => setUpStatus(""), 3000); resetInput();
+          showToast("上传失败: " + (msg || "请稍后重试"), "error");
+          return;
+        }
+        setUpStatus("done"); track("book_import", { format: f.name.split(".").pop() }); await load();
+        setTimeout(() => { setUpStatus(""); setUpProgress(0); }, 3000);
+        resetInput();
         return;
       }
       const { upload_url, key } = await (presignRes as Response).json();
