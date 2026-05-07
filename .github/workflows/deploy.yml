@@ -3,8 +3,8 @@ name: Deploy to ECS
 on:
   push:
     tags:
-      - 'v*'          # 打 tag v4.0.3 等自动部署
-  workflow_dispatch:   # 支持手动触发
+      - 'v*'
+  workflow_dispatch:
     inputs:
       target:
         description: '部署目标'
@@ -24,8 +24,8 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/xiugua_ecs
-          chmod 600 ~/.ssh/xiugua_ecs
+          echo "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H 122.51.236.219 >> ~/.ssh/known_hosts
 
       - name: Deploy
@@ -34,5 +34,5 @@ jobs:
 
       - name: Health Check
         run: |
-          sleep 3
+          sleep 5
           curl -s https://xiugua-reading.cn/health | grep '"ok"'
